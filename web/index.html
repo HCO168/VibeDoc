@@ -160,12 +160,28 @@ pre.ts { background: var(--panel); border: 1px solid var(--border); border-radiu
 .ft-nest { grid-column: 1 / -1; margin: 2px 0 4px 6px; padding-left: 8px; border-left: 2px solid var(--border); }
 .pop-chip { margin: 4px 4px 0 0; }
 .popover { position: fixed; z-index: 25; width: min(520px, calc(100vw - 24px)); max-height: 70vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .18); }
+/* Table requests: the column grid of the new / change table form. */
+.drawer.wide { width: min(1120px, 100%); }
+.form2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.cols-wrap { overflow-x: auto; padding-bottom: 4px; }
+.cols-grid { display: grid; grid-template-columns: 1.1fr 1fr auto .9fr 1.2fr 92px 1fr 1.4fr 26px; gap: 4px 6px; align-items: center; font-size: 12px; min-width: 980px; }
+.cols-grid.alter { grid-template-columns: 76px 1.1fr 1fr auto .9fr 1.2fr 92px 1fr 1.4fr 26px; min-width: 1040px; }
+.cols-grid .hd { color: var(--muted); }
+.drawer .cols-grid input[type=text], .drawer .cols-grid select { width: 100%; padding: 3px 6px; font-size: 12px; }
+.cols-grid input:disabled, .cols-grid select:disabled { opacity: .45; }
+.flags { display: flex; gap: 6px; white-space: nowrap; align-items: center; }
+.drawer .flags label { display: inline-flex; gap: 2px; align-items: center; margin: 0; color: var(--text); font-size: 12px; }
+.drawer .flags select { width: auto; }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.warn { color: var(--warn); font-size: 12px; margin-top: 4px; }
+.row.req .head { align-items: center; }
 @media (max-width: 760px) {
   .map { grid-template-columns: 1fr; }
   .mods { position: static; max-height: none; display: flex; overflow-x: auto; gap: 2px; }
   .mods button { width: auto; flex-shrink: 0; white-space: nowrap; }
   .mods .c { display: none; }
   .board { grid-template-columns: repeat(5, 240px); }
+  .form2 { grid-template-columns: 1fr; }
   .row .head { flex-wrap: wrap; }
 }
 </style>
@@ -203,6 +219,8 @@ const state = {
   // Code map: the selected group per tab; each layer is grouped its own way (see GROUPS).
   mapGroup: {},
   features: { modules: [], items: [] },
+  // Table requests (tablesDir), each with its parsed spec and SQL draft from the server.
+  tables: [],
   feat: { module: saved("featModule", ""), status: "" },
   graph: { group: "", page: "", focus: null, bodies: saved("graphBodies", "inline"), shared: saved("graphShared", "0") === "1", allFns: saved("graphAllFns", "0") === "1" },
 };
@@ -239,6 +257,9 @@ async function loadRules() {
 }
 async function loadFeatures() {
   state.features = await (await fetch("/api/features")).json();
+}
+async function loadTables() {
+  state.tables = (await (await fetch("/api/tables")).json()).items;
 }
 async function loadCode() {
   const data = await (await fetch("/api/codemap")).json();
@@ -289,8 +310,13 @@ function groupsOf(layer) {
   else if (layer === "api") c.routes.forEach((r) => add(apiGroup(r)));
   else if (layer === "backend") backendFns().forEach((f) => backendGroups(f).forEach(add));
   else if (layer === "structs") c.types.forEach((t) => add(structGroup(t.file)));
-  else if (layer === "database") c.tables.forEach((t) => add(t.schema));
-  return [...count].sort(([a], [b]) => (a === NO_BACKEND) - (b === NO_BACKEND) || a.localeCompare(b));
+  else if (layer === "database") {
+    c.tables.forEach((t) => add(t.schema));
+    // Schemas that so far exist only in requests, and an overview of every request.
+    for (const t of state.tables) if (!count.has(t.spec.schema)) count.set(t.spec.schema, 0);
+    if (state.tables.length) count.set(ALL_REQUESTS, state.tables.filter(pendingTable).length);
+  }
+  return [...count].sort(([a], [b]) => (b === ALL_REQUESTS) - (a === ALL_REQUESTS) || (a === NO_BACKEND) - (b === NO_BACKEND) || a.localeCompare(b));
 }
 function currentGroup(layer) {
   const groups = groupsOf(layer);
@@ -381,8 +407,8 @@ function renderBoard() {
 }
 
 // ---------- rule drawer ----------
-function drawer(content) {
-  const ov = h("div", { class: "overlay", onclick: (e) => { if (e.target === ov) close(); } }, h("div", { class: "drawer" }, content));
+function drawer(content, cls = "") {
+  const ov = h("div", { class: "overlay", onclick: (e) => { if (e.target === ov) close(); } }, h("div", { class: `drawer ${cls}` }, content));
   const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
   const esc = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", esc);
@@ -653,6 +679,194 @@ function newFeature() {
   ]);
   title.addEventListener("input", () => { err.textContent = ""; });
   setTimeout(() => title.focus(), 30);
+}
+
+// ---------- table requests ----------
+// Tables the user asks to create or change, filed per schema in tablesDir (format in tables/spec.ts).
+// The board sends a structured spec; the server writes the Markdown and returns it parsed with a SQL draft.
+const TABLE_OPS = { create: "新建表", alter: "修改表" };
+const COLUMN_OPS = { add: "新增", alter: "修改", drop: "删除" };
+const ALL_REQUESTS = "（全部表变更）";
+const REQUEST_ORDER = ["modified", "confirm", "doing", "new", "done", "parked"];
+const PG_TYPES = ["uuid", "text", "varchar(255)", "citext", "boolean", "smallint", "integer", "bigint", "bigserial", "numeric(12,2)", "real", "double precision", "timestamptz", "timestamp", "date", "time", "interval", "jsonb", "json", "bytea", "inet", "text[]", "uuid[]"];
+const TABLE_NOTES = {
+  new: "AI 还没处理。需要它写迁移时，把同步指令发给 AI。",
+  confirm: "AI 已在对话里给出迁移计划。确认后变为「开发中」，AI 才会写迁移。",
+  doing: "AI 正在写迁移。",
+  modified: "AI 记录过这条之后你又改了它。让 AI 同步时，它会对比上次的内容，只针对改动的部分补迁移。",
+  done: "已持久化：迁移已写好并合入开发主分支。再改内容会自动变成「已修改」。",
+  parked: "暂时不做。",
+};
+const pendingTable = (t) => ["new", "modified", "confirm", "doing"].includes(t.effective);
+const requestKey = (t) => `${t.spec.schema}.${t.spec.name}`;
+const byRequestOrder = (a, b) => REQUEST_ORDER.indexOf(a.effective) - REQUEST_ORDER.indexOf(b.effective) || a.id.localeCompare(b.id, "en", { numeric: true });
+// Whether the replayed migrations already contain what a request asks for (same rule as tables/spec.ts appliedIn).
+function tableApplied(spec) {
+  const t = state.code?.tableByKey.get(`${spec.schema}.${spec.name}`);
+  if (!t) return false;
+  const has = (name) => t.columns.some((c) => c.name === name);
+  if (spec.op === "create") return spec.columns.every((c) => has(c.name));
+  const checkable = spec.columns.filter((c) => c.op !== "alter");
+  return checkable.length > 0 && checkable.every((c) => (c.op === "drop" ? !has(c.name) : has(c.name)));
+}
+const copySync = async (id) => { await navigator.clipboard.writeText(`同步表 ${id}`); toast("已复制，粘贴到和 AI 的对话里"); };
+function requestRow(t, showSchema) {
+  const cols = t.spec.columns;
+  const summary = t.spec.op === "create" ? preview(cols.map((c) => c.name), 10) : preview(cols.map((c) => `${COLUMN_OPS[c.op]} ${c.name}`), 6);
+  return h("div", { class: `row req ${state.highlight === `req:${t.id}` ? "hl" : ""}` }, h("div", { class: "head", onclick: () => openTable({ item: t }) },
+    h("div", { style: "min-width:0" },
+      h("div", {}, h("span", { class: `st ${t.effective}` }, FSTATUS[t.effective]), " ", h("span", { class: "tag" }, TABLE_OPS[t.spec.op]), " ",
+        h("span", { class: "name mono" }, showSchema ? requestKey(t) : t.spec.name), h("span", { class: "fid mono", style: "margin-left:6px" }, t.id),
+        tableApplied(t.spec) && t.effective !== "done" ? h("span", { class: "tag", style: "margin-left:6px;color:var(--done)", title: "迁移里已经能找到这些改动" }, "迁移里已有") : null),
+      summary ? h("div", { class: "mono fields" }, summary) : null,
+      t.spec.comment ? h("div", { class: "doc" }, firstPara(t.spec.comment)) : null),
+    h("span", { class: "acts" }, h("button", { class: "small", onclick: (e) => { e.stopPropagation(); copySync(t.id); } }, "复制同步指令"))));
+}
+// Pending requests first; persisted and parked ones folded away.
+function requestList(list, showSchema) {
+  const open = list.filter((t) => t.effective !== "done" && t.effective !== "parked").sort(byRequestOrder);
+  const closed = list.filter((t) => t.effective === "done" || t.effective === "parked").sort(byRequestOrder);
+  return [
+    ...open.map((t) => requestRow(t, showSchema)),
+    closed.length ? h("details", { class: "parked-area" }, h("summary", {}, `已持久化与搁置 ${closed.length} 条`), closed.map((t) => requestRow(t, showSchema))) : null,
+  ];
+}
+function openTable(opts = {}) {
+  const item = opts.item || null;
+  const spec0 = item ? structuredClone(item.spec) : { op: opts.op || "create", schema: opts.schema || "", name: opts.name || "", comment: "", notes: "", columns: [] };
+  const alter = spec0.op === "alter";
+  const c = state.code;
+  const schemas = [...new Set([...c.tables.map((t) => t.schema), ...state.tables.map((t) => t.spec.schema)])].sort();
+  const schema = h("input", { type: "text", list: "tbl-schemas", value: spec0.schema, placeholder: "例如 billing；新 schema 直接写名字", disabled: item ? true : null });
+  const name = h("input", { type: "text", list: alter ? "tbl-names" : null, value: spec0.name, placeholder: alter ? "要修改的表" : "例如 invoices（小写字母加下划线）" });
+  const tableList = h("datalist", { id: "tbl-names" });
+  const colList = h("datalist", { id: "tbl-cols" });
+  const existing = () => c.tableByKey.get(`${schema.value.trim()}.${name.value.trim()}`);
+  const nameWarn = h("div", { class: "warn" });
+  const paintLists = () => {
+    tableList.replaceChildren(...c.tables.filter((t) => t.schema === schema.value.trim() && t.kind === "table").map((t) => h("option", { value: t.name }, t.comment ? firstPara(t.comment).slice(0, 40) : "")));
+    colList.replaceChildren(...(existing()?.columns || []).map((col) => h("option", { value: col.name }, col.type)));
+    const ex = existing();
+    nameWarn.textContent = !name.value.trim() ? ""
+      : !alter && ex ? "迁移里已经有这张表；要改它请在表的行上点「改表」。"
+      : alter && !ex && !state.tables.some((t) => t.spec.op === "create" && requestKey(t) === `${schema.value.trim()}.${name.value.trim()}`) ? "迁移里没有找到这张表。" : "";
+  };
+  const comment = h("textarea", { style: "min-height:60px", placeholder: alter ? "为什么改、改完要达到什么效果" : "这张表存什么、谁会读写它" }, spec0.comment);
+  const notes = h("textarea", { style: "min-height:70px", placeholder: "索引、组合唯一、权限、RLS、已有数据怎么迁移……口语即可" }, spec0.notes);
+  const blank = (op) => ({ op: alter ? op || "add" : null, name: "", type: "", pk: false, notNull: false, nullable: false, unique: false, default: "", ref: "", onDelete: "", extra: "", comment: "" });
+  const rows = spec0.columns.map((col) => ({ ...col, extra: col.extra.join("，") }));
+  if (!rows.length) rows.push(blank());
+  const refs = [...c.tables.filter((t) => t.kind === "table").map((t) => `${t.key}(${t.columns.find((x) => x.pk)?.name || "id"})`), ...state.tables.filter((t) => t.spec.op === "create").map((t) => `${requestKey(t)}(${t.spec.columns.find((x) => x.pk)?.name || "id"})`)];
+  const types = [...new Set([...PG_TYPES, ...c.tables.flatMap((t) => t.columns.map((x) => x.type.toLowerCase()))])].filter((t) => t && t.length < 40);
+  const grid = h("div", { class: `cols-grid ${alter ? "alter" : ""}` });
+  const sql = h("pre", { class: "ts mono", style: "max-height:320px;overflow:auto" }, item?.sql || "");
+  const err = h("div", { class: "err" });
+  const spec = () => ({ op: spec0.op, schema: schema.value.trim(), name: name.value.trim(), comment: comment.value, notes: notes.value, columns: rows });
+  let timer;
+  const refresh = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try { sql.textContent = (await api("POST", "/api/tables/preview", { spec: spec(), id: item?.id })).sql; } catch {}
+    }, 250);
+  };
+  const paintGrid = () => {
+    const input = (r, k, attrs = {}, after) => h("input", { type: "text", value: r[k], ...attrs, oninput: (e) => { r[k] = e.target.value; after?.(); refresh(); } });
+    const check = (r, k, label, disabled) => h("label", {}, h("input", { type: "checkbox", checked: r[k] || null, disabled: disabled || null, onchange: (e) => { r[k] = e.target.checked; refresh(); } }), label);
+    const cells = rows.flatMap((r, i) => {
+      const drop = r.op === "drop";
+      const change = r.op === "alter";
+      // A changed column shows its current type and comment as placeholders.
+      const current = () => (change ? existing()?.columns.find((x) => x.name === r.name) : null);
+      const cur = current();
+      const typeEl = input(r, "type", { list: "tbl-types", disabled: drop || null, placeholder: change ? (cur ? `不变（${cur.type}）` : "类型不变") : "类型" });
+      const commentEl = input(r, "comment", { placeholder: drop ? "为什么删" : change && cur?.comment ? cur.comment : "说明" });
+      const nullSel = h("select", { title: "非空约束", onchange: (e) => { r.notNull = e.target.value === "notNull"; r.nullable = e.target.value === "nullable"; refresh(); } },
+        h("option", { value: "" }, "非空不变"), h("option", { value: "notNull" }, "改为非空"), h("option", { value: "nullable" }, "改为可空"));
+      nullSel.value = r.notNull ? "notNull" : r.nullable ? "nullable" : "";
+      const del = h("select", { disabled: drop || !r.ref || null, onchange: (e) => { r.onDelete = e.target.value; refresh(); } }, h("option", { value: "" }, "删除时—"), h("option", { value: "cascade" }, "级联删除"), h("option", { value: "set null" }, "置空"));
+      del.value = r.onDelete;
+      const opSel = h("select", { onchange: (e) => { r.op = e.target.value; paintGrid(); refresh(); } }, Object.entries(COLUMN_OPS).map(([k, v]) => h("option", { value: k }, v)));
+      opSel.value = r.op;
+      return [
+        alter ? opSel : null,
+        input(r, "name", { list: alter && r.op !== "add" ? "tbl-cols" : null, placeholder: "字段名" }, () => {
+          if (!change) return;
+          const c2 = current();
+          typeEl.placeholder = c2 ? `不变（${c2.type}）` : "类型不变";
+          commentEl.placeholder = c2?.comment || "说明";
+        }),
+        typeEl,
+        h("span", { class: "flags" }, check(r, "pk", "主键", drop), change ? nullSel : check(r, "notNull", "非空", drop || r.pk), check(r, "unique", "唯一", drop)),
+        input(r, "default", { disabled: drop || null, placeholder: "默认值" }),
+        input(r, "ref", { list: "tbl-refs", disabled: drop || null, placeholder: "引用 schema.表(字段)" }, () => { del.disabled = !r.ref; }),
+        del,
+        input(r, "extra", { disabled: drop || null, placeholder: "其他约束，如 check (x > 0)" }),
+        commentEl,
+        h("button", { class: "small", title: "去掉这一行", onclick: () => { rows.splice(i, 1); paintGrid(); refresh(); } }, "✕"),
+      ].filter(Boolean);
+    });
+    grid.replaceChildren(...[...(alter ? ["操作"] : []), "字段名", "类型", "约束", "默认值", "引用", "删除时", "其他约束", "说明", ""].map((x) => h("div", { class: "hd" }, x)), ...cells);
+  };
+  const add = (...cols) => { for (const col of cols) rows.push({ ...blank(), ...col }); paintGrid(); refresh(); };
+  // The primary key goes first, replacing an untouched blank row.
+  const addFirst = (col) => { if (rows.length && !rows[0].name && !rows[0].type) rows.shift(); rows.unshift({ ...blank(), ...col }); paintGrid(); refresh(); };
+  const quick = h("div", { class: "quick" }, alter
+    ? Object.entries(COLUMN_OPS).map(([k, v]) => h("button", { class: "small", onclick: () => add({ op: k }) }, `+ ${v}字段`))
+    : [
+      h("button", { class: "small", onclick: () => add({}) }, "+ 字段"),
+      h("button", { class: "small", onclick: () => addFirst({ name: "id", type: "uuid", pk: true, default: "gen_random_uuid()" }) }, "+ id（uuid 主键）"),
+      h("button", { class: "small", onclick: () => add({ name: "created_at", type: "timestamptz", notNull: true, default: "now()" }, { name: "updated_at", type: "timestamptz", notNull: true, default: "now()" }) }, "+ created_at／updated_at"),
+    ]);
+  for (const el of [schema, name]) el.addEventListener("input", () => { paintLists(); if (alter) paintGrid(); refresh(); });
+  for (const el of [comment, notes]) el.addEventListener("input", refresh);
+  paintLists();
+  paintGrid();
+  if (!item) refresh();
+  const moves = item ? (MOVES[item.effective] || []).map(([to, label]) => h("button", { onclick: async () => {
+    try { await api("POST", `/api/tables/${item.id}/status`, { status: to }); close(); toast(`已改为「${FSTATUS[to]}」`); } catch (e) { err.textContent = e.message; }
+  } }, label)) : [];
+  const save = async () => {
+    try {
+      const r = item ? await api("PUT", `/api/tables/${item.id}`, { spec: spec() }) : await api("POST", "/api/tables", { spec: spec() });
+      close();
+      state.mapGroup.database = r.module;
+      Object.assign(state, { view: "map", mapLayer: "database", highlight: `req:${r.id}` });
+      await loadTables();
+      render();
+      toast(item ? "已保存" : `已保存为 ${r.id}，写入 ${CONFIG.tablesDir}/${r.module}.md`);
+    } catch (e) { err.textContent = e.message; }
+  };
+  const ex = item && existing();
+  const close = drawer([
+    h("datalist", { id: "tbl-schemas" }, schemas.map((s) => h("option", { value: s }))),
+    h("datalist", { id: "tbl-types" }, types.map((t) => h("option", { value: t }))),
+    h("datalist", { id: "tbl-refs" }, refs.map((t) => h("option", { value: t }))),
+    tableList, colList,
+    h("h2", {}, item ? [h("span", { class: `st ${item.effective}` }, FSTATUS[item.effective]), h("span", { class: "mono" }, item.id), TABLE_OPS[spec0.op]] : alter ? `修改表 ${spec0.schema}.${spec0.name}` : "新建表"),
+    item ? h("div", { class: "note" }, `${CONFIG.tablesDir}/${item.module}.md${item.date ? ` · 最近状态变化 ${item.date}` : ""}`, ex ? [" · ", h("span", { class: "link", onclick: () => { close(); goTo(`table:${item.module}.${item.spec.name}`); } }, "在代码地图中查看这张表")] : null) : null,
+    h("div", { class: "form2" },
+      h("div", {}, h("label", {}, "schema"), schema),
+      h("div", {}, h("label", {}, "表名"), name, nameWarn)),
+    h("label", {}, alter ? "改动说明" : "这张表做什么"), comment,
+    h("label", {}, alter ? "要改的字段（修改：只填要变的部分，留空表示不变）" : "字段"),
+    h("div", { class: "cols-wrap" }, grid),
+    quick,
+    h("label", {}, "其他要求"), notes,
+    err,
+    h("div", { class: "bar" },
+      h("button", { class: "primary", onclick: save }, "保存"),
+      moves,
+      item ? h("button", { onclick: () => copySync(item.id) }, "复制同步指令") : null,
+      item && ["new", "parked"].includes(item.effective) ? h("button", { onclick: async () => {
+        if (!confirm(`删除 ${item.id}？`)) return;
+        try { await api("DELETE", `/api/tables/${item.id}`); close(); toast("已删除"); } catch (e) { err.textContent = e.message; }
+      } }, "删除") : null),
+    h("div", { class: "note" }, item ? TABLE_NOTES[item.effective] : "保存后标为「新提出」，写进仓库的 Markdown。AI 不会自动执行：在对话里说「同步表」加编号，它会先给迁移计划，等你确认再写。"),
+    h("label", {}, "SQL 草稿（给 AI 参考，按仓库约定写成迁移）"),
+    h("div", { class: "quick", style: "margin:0 0 4px" }, h("button", { class: "small", onclick: async () => { await navigator.clipboard.writeText(sql.textContent); toast("已复制 SQL 草稿"); } }, "复制 SQL")),
+    sql,
+  ], "wide");
+  setTimeout(() => (item || spec0.name ? comment : spec0.schema ? name : schema).focus(), 30);
 }
 
 // ---------- code map ----------
@@ -934,13 +1148,26 @@ function mapContent(group, layer) {
     return [h("div", { class: "empty", style: "padding:0 0 4px" }, note), ...byFile(fns)];
   }
   if (layer === "database") {
+    const reqMatch = (t) => matches(t.id, t.spec.name, t.spec.comment, t.spec.notes, t.spec.columns.map((x) => x.name).join(" "));
+    const newTable = (schema) => h("div", { class: "doc-bar" }, h("button", { class: "primary small", onclick: () => openTable({ schema }) }, "新建表"),
+      h("span", { class: "empty" }, "提出要新建的表；要改已有的表，在它那一行点「改表」。条目写进 ", h("code", { class: "mono" }, `${CONFIG.tablesDir}/<schema>.md`), "，AI 按条目写迁移。"));
+    if (group === ALL_REQUESTS) {
+      const list = state.tables.filter(reqMatch);
+      return [newTable(""), h("div", { class: "file-h" }, `所有 schema 的表变更（${list.length}）`), ...(list.length ? requestList(list, true) : [h("div", { class: "empty" }, "没有匹配的表变更")])];
+    }
+    const reqs = state.tables.filter((t) => t.spec.schema === group && reqMatch(t));
     const tables = c.tables.filter((t) => t.schema === group && matches(t.key, t.comment, t.columns.map((x) => x.name).join(" ")));
     const users = (key) => c.functions.filter((f) => f.tables.some((t) => t.name === key));
     const rows = tables.map((t) => {
       const key = `table:${t.key}`;
+      const changes = state.tables.filter((x) => requestKey(x) === t.key);
+      const pending = changes.filter(pendingTable).length;
       return row(key, [
         h("div", { style: "min-width:0" }, h("div", {}, h("span", { class: "name mono" }, t.key), h("span", { class: "tag", style: "margin-left:6px" }, t.kind === "view" ? "视图" : `${t.columns.length} 个字段`)), h("div", { class: "doc" }, t.comment || "")),
-        h("span", { class: "acts" }, askButton(key, t.module, "database"), graphButton(key)),
+        h("span", { class: "acts" },
+          pending ? h("span", { class: "rulecount", title: "还没持久化的表变更" }, `${pending} 条表变更`) : null,
+          t.kind === "table" ? h("button", { class: "small", onclick: (e) => { e.stopPropagation(); openTable({ schema: t.schema, name: t.name, op: "alter" }); } }, "改表") : null,
+          askButton(key, t.module, "database"), graphButton(key)),
       ], () => [
         t.columns.length ? h("table", { style: "width:100%;border-collapse:collapse;font-size:12px" }, t.columns.map((col) => h("tr", {},
           h("td", { class: "mono", style: "padding:2px 8px 2px 0;vertical-align:top" }, col.name),
@@ -950,10 +1177,17 @@ function mapContent(group, layer) {
         h("div", {}, h("span", { class: "k" }, "写入："), joinNodes(users(t.key).filter((f) => f.tables.find((x) => x.name === t.key).write).map((f) => fnRef(f.id))), users(t.key).some((f) => f.tables.find((x) => x.name === t.key).write) ? "" : "未发现"),
         h("div", {}, h("span", { class: "k" }, "读取："), joinNodes(users(t.key).filter((f) => !f.tables.find((x) => x.name === t.key).write).map((f) => fnRef(f.id)))),
         h("div", {}, h("span", { class: "k" }, "创建于："), h("span", { class: "mono" }, t.createdIn.split("/").pop()), `，共涉及 ${t.migrations.length} 个迁移`),
+        changes.length ? h("div", {}, h("span", { class: "k" }, "表变更："), joinNodes(changes.sort(byRequestOrder).map((x) => h("span", { class: "link", onclick: () => openTable({ item: x }) }, `${x.id} ${TABLE_OPS[x.spec.op]}（${FSTATUS[x.effective]}）`)))) : null,
       ]);
     });
     const repo = repoFns().filter((f) => f.tables.some((t) => tableSchema(t.name) === group) && matches(f.key, f.docs));
-    return [h("div", { class: "file-h" }, `${tables.length} 张表`), ...(rows.length ? rows : [h("div", { class: "empty" }, "没有匹配的表")]), h("div", { class: "file-h" }, `访问这些表的数据访问函数（${repo.length}）`), ...byFile(repo)];
+    return [
+      newTable(group),
+      reqs.length ? h("div", { class: "file-h" }, `表变更（${reqs.length}）`) : null,
+      ...requestList(reqs, false),
+      h("div", { class: "file-h" }, `${tables.length} 张表`), ...(rows.length ? rows : [h("div", { class: "empty" }, c.tables.some((t) => t.schema === group) ? "没有匹配的表" : "迁移里还没有这个 schema 的表")]),
+      h("div", { class: "file-h" }, `访问这些表的数据访问函数（${repo.length}）`), ...byFile(repo),
+    ];
   }
   const files = c.frontendFiles.filter((f) => frontGroup(f.file) === group && matches(f.file, f.clientFns.map((x) => x.name).join(" ")));
   const pages = c.frontendRoutes.filter((r) => frontGroup(r.target || r.file) === group);
@@ -980,8 +1214,10 @@ function renderMap() {
   const layer = state.mapLayer;
   const group = currentGroup(layer);
   const heading = { frontend: "前端（按应用／页面目录）", api: "API（按路径首段）", backend: "后端（按服务）", structs: "结构体（按声明文件）", database: "数据库（按 schema）" }[layer];
+  // Database schemas also show how many table requests wait in them.
+  const waiting = (g) => (layer === "database" && g !== ALL_REQUESTS ? state.tables.filter((t) => t.spec.schema === g && pendingTable(t)).length : 0);
   const mods = h("div", { class: "mods" }, h("div", { class: "grp-h" }, heading), groupsOf(layer).map(([g, n]) => h("button", { class: g === group ? "on" : "", onclick: () => { state.mapGroup[layer] = g; state.highlight = null; render(); } },
-    h("span", { class: "mono" }, g), h("span", { class: "c" }, n))));
+    h("span", { class: g === ALL_REQUESTS ? "" : "mono" }, g), waiting(g) ? h("span", { class: "rulecount", title: "待处理的表变更" }, waiting(g)) : null, h("span", { class: "c" }, n))));
   const tabs = h("div", { class: "tabs layer-tabs" }, Object.entries(MAP_TABS).map(([k, v]) => h("button", { class: layer === k ? "on" : "", onclick: () => { state.mapLayer = k; state.highlight = null; render(); } }, v)));
   const info = h("div", { class: "empty", style: "padding:0 0 8px" }, layer === "structs" ? "这个文件声明的请求、响应及嵌套结构体。搜索框可按结构体名或字段名筛选。" : "点一行展开详情；点「提要求」写一条针对它的规则（归入它所属的规则模块）。搜索框也能按字段名找接口。");
   return [h("div", { class: "map" }, mods, h("div", { class: "panel" }, tabs, info, mapContent(group, layer)))];
@@ -1304,7 +1540,7 @@ function render() {
   const main = document.getElementById("main");
   const y = window.scrollY;
   const newBtn = document.getElementById("new-rule");
-  newBtn.textContent = state.view === "features" ? "提新功能" : "新建规则";
+  newBtn.textContent = state.view === "features" ? "提新功能" : state.view === "map" && state.mapLayer === "database" ? "新建表" : "新建规则";
   main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : renderMap()));
   window.scrollTo(0, y);
 }
@@ -1315,7 +1551,11 @@ document.querySelectorAll(".tabs button[data-view]").forEach((b) => b.addEventLi
 document.getElementById("module").addEventListener("change", (e) => { state.module = e.target.value; render(); });
 let searchTimer;
 document.getElementById("search").addEventListener("input", (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value.trim(); render(); }, 150); });
-document.getElementById("new-rule").addEventListener("click", () => (state.view === "features" ? newFeature() : newRule()));
+document.getElementById("new-rule").addEventListener("click", () => {
+  if (state.view === "features") return newFeature();
+  if (state.view === "map" && state.mapLayer === "database") { const g = currentGroup("database"); return openTable({ schema: g === ALL_REQUESTS ? "" : g }); }
+  newRule();
+});
 document.getElementById("stop").addEventListener("click", async () => {
   if (!confirm("停止 VibeDoc 服务？")) return;
   try { await api("POST", "/api/shutdown", {}); } catch {}
@@ -1340,10 +1580,11 @@ function connect() {
     }
     render();
   });
+  es.addEventListener("tables", async () => { await loadTables(); render(); });
   es.addEventListener("code", async () => { await loadCode(); render(); toast("代码有变化，地图已更新"); });
 }
 (async () => {
-  await Promise.all([loadRules(), loadFeatures(), loadCode()]);
+  await Promise.all([loadRules(), loadFeatures(), loadTables(), loadCode()]);
   render();
   connect();
 })();

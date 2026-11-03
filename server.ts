@@ -1,4 +1,4 @@
-// VibeDoc local server: rule board, feature document, code map and relationship graph for one repository,
+// VibeDoc local server: rule board, feature document, table requests, code map and relationship graph for one repository,
 // on http://127.0.0.1:<port> (vibedoc.config.json `port`, PORT overrides; default 4870).
 //   vibedoc serve        (run inside the repository, or set VIBEDOC_REPO)
 // Listens on loopback only. Writes need the per-start token embedded in the served page.
@@ -11,6 +11,7 @@ import { buildModel, loadModules } from "./codemap/model.ts";
 import { toJson } from "./codemap/json.ts";
 import { RuleStore, LAYERS, outline, editableText, versionOf, kindsFor, type Layer, type RuleItem } from "./rules/store.ts";
 import { findRoot, loadConfig } from "./config.ts";
+import { specOf, normalize, formatSpec, toSql } from "./tables/spec.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = findRoot();
@@ -27,6 +28,8 @@ const titles = () => {
 };
 const store: RuleStore = new RuleStore(root, new Map(), kinds.rules);
 const features: RuleStore = new RuleStore(root, new Map(), kinds.features);
+// Table requests are filed per schema, so their files have no module title.
+const tables: RuleStore = new RuleStore(root, new Map(), kinds.tables);
 store.titles = features.titles = titles();
 
 let codemap: string | null = null;
@@ -57,6 +60,7 @@ const refreshAll = (s: RuleStore, event: string) => () => {
 };
 const onRules = debounce(refreshAll(store, "rules"), 250);
 const onFeatures = debounce(refreshAll(features, "features"), 250);
+const onTables = debounce(refreshAll(tables, "tables"), 250);
 const onCode = debounce(() => {
   codemap = null;
   cfg = { ...loadConfig(root), port };
@@ -79,6 +83,7 @@ const watchPath = (rel: string, cb: (file: string) => void) => {
 };
 watchPath(cfg.rulesDir, (f) => f.endsWith(".md") && onRules());
 watchPath(cfg.featuresDir, (f) => f.endsWith(".md") && onFeatures());
+watchPath(cfg.tablesDir, (f) => f.endsWith(".md") && onTables());
 if (cfg.codemap) {
   const dirs = [...cfg.codemap.crates.map((c) => `${c.dir}/src`), ...(cfg.codemap.migrationsDir ? [cfg.codemap.migrationsDir] : []), ...cfg.codemap.frontendRoots, ...cfg.watch];
   for (const d of new Set(dirs)) watchPath(d, onCode);
@@ -109,6 +114,10 @@ const featureDoc = () => ({
   }),
   items: features.all().map(view),
 });
+const tableView = (r: RuleItem) => {
+  const spec = specOf(r);
+  return { ...view(r), spec, sql: toSql(spec, r.id) };
+};
 
 async function body(req: IncomingMessage): Promise<any> {
   const chunks: Buffer[] = [];
@@ -130,7 +139,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   try {
     if (req.method === "GET" && url.pathname === "/") {
-      const page = { name: cfg.name, rulesDir: cfg.rulesDir, featuresDir: cfg.featuresDir, codemap: !!cfg.codemap };
+      const page = { name: cfg.name, rulesDir: cfg.rulesDir, featuresDir: cfg.featuresDir, tablesDir: cfg.tablesDir, migrationsDir: cfg.codemap?.migrationsDir ?? null, codemap: !!cfg.codemap };
       const html = readFileSync(join(here, "web/index.html"), "utf8").replace("__BOARD_TOKEN__", token).replace('"__BOARD_CONFIG__"', JSON.stringify(page).replace(/</g, "\\u003c"));
       return send(res, 200, html, "text/html; charset=utf-8");
     }
@@ -138,6 +147,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/codemap") return send(res, 200, codemapJson());
     if (req.method === "GET" && url.pathname === "/api/rules") return send(res, 200, { items: store.all().map(view) });
     if (req.method === "GET" && url.pathname === "/api/features") return send(res, 200, featureDoc());
+    if (req.method === "GET" && url.pathname === "/api/tables") return send(res, 200, { items: tables.all().map(tableView) });
     if (req.method === "GET" && url.pathname === "/api/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
       res.write("retry: 2000\n\n");
@@ -189,6 +199,43 @@ const server = createServer(async (req, res) => {
         const item = features.setStatus(featureMove[1], data.status);
         emit("features");
         return send(res, 200, view(item));
+      }
+      // Table requests: the board sends a structured spec (tables/spec.ts) and the server writes the Markdown.
+      if (req.method === "POST" && url.pathname === "/api/tables/preview") {
+        const spec = normalize(data.spec, false);
+        return send(res, 200, { sql: toSql(spec, data.id ? String(data.id) : null), body: formatSpec(spec).body });
+      }
+      if (req.method === "POST" && url.pathname === "/api/tables") {
+        const spec = normalize(data.spec);
+        const { section, title, body } = formatSpec(spec);
+        const item = tables.add(spec.schema, section, title, body, null);
+        emit("tables");
+        return send(res, 201, tableView(item));
+      }
+      const tableEdit = /^\/api\/tables\/([a-z0-9_]+-t\d+)$/.exec(url.pathname);
+      if (req.method === "PUT" && tableEdit) {
+        const current = tables.find(tableEdit[1]);
+        // A request stays in its schema file and section; only the table name and content change.
+        const spec = normalize({ ...data.spec, schema: current.module, op: specOf(current).op });
+        const { title, body } = formatSpec(spec);
+        const item = tables.edit(tableEdit[1], title, body);
+        emit("tables");
+        return send(res, 200, tableView(item));
+      }
+      if (req.method === "DELETE" && tableEdit) {
+        const current = tables.find(tableEdit[1]);
+        if (!["new", "parked"].includes(current.effective)) return send(res, 409, { error: "AI 已经处理过这条，不能删除；不需要了可以搁置" });
+        tables.remove(tableEdit[1]);
+        emit("tables");
+        return send(res, 200, { success: true });
+      }
+      const tableMove = /^\/api\/tables\/([a-z0-9_]+-t\d+)\/status$/.exec(url.pathname);
+      if (req.method === "POST" && tableMove) {
+        const current = tables.find(tableMove[1]);
+        if (!HUMAN_MOVES[current.effective]?.includes(data.status)) return send(res, 409, { error: "这个状态需要由 AI 设置" });
+        const item = tables.setStatus(tableMove[1], data.status);
+        emit("tables");
+        return send(res, 200, tableView(item));
       }
       const edit = /^\/api\/rules\/([a-z0-9_]+-\d+)$/.exec(url.pathname);
       if (req.method === "PUT" && edit) {

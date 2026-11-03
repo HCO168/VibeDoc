@@ -1,6 +1,7 @@
 // Tracked documents, one file per module, one `### 标题` per item:
 //   rules     <rulesDir>/<module>.md, `## 层` sections; the user owns the text.
 //   features  <featuresDir>/<module>.md, free `## 分组` sections; the AI writes it, the user may edit it.
+//   tables    <tablesDir>/<schema>.md, `## 新建表` / `## 修改表` sections; table requests (see tables/spec.ts).
 // Machine state lives in the two managed lines under each heading:
 //   <!-- rule:<id> status=... h=... -->   machine state (values URI-encoded; `feature:` for features)
 //   > <!--rule-badge--> ...                visible badge regenerated from the state
@@ -54,11 +55,20 @@ export const FEATURES: DocKind = {
   tracked: ["confirm", "doing", "done", "released"], idPart: "f", layered: false,
   intro: "> 功能与架构文档：只写这个模块做什么、怎么组成，不写代码细节。格式与状态见 `doc/features/README.md`。",
 };
-// The two kinds with the directories a repository configures.
-export function kindsFor(cfg: { rulesDir: string; featuresDir: string }): { rules: DocKind; features: DocKind } {
+export const TABLE_STATUSES = ["new", "confirm", "doing", "done", "parked"] as const;
+export const TABLES: DocKind = {
+  tag: "table", dir: "doc/table-changes", statuses: TABLE_STATUSES,
+  names: { new: "新提出", confirm: "待你确认", doing: "开发中", modified: "已修改", done: "已持久化", parked: "搁置" },
+  icons: { new: "⚪", confirm: "🟣", doing: "🔵", modified: "🟠", done: "🟢", parked: "⏸" },
+  tracked: ["confirm", "doing", "done"], idPart: "t", layered: false,
+  intro: "> 数据库表变更：提出要新建或修改的表，AI 按条目写迁移。格式与状态见 `doc/table-changes/README.md`。",
+};
+// The kinds with the directories a repository configures.
+export function kindsFor(cfg: { rulesDir: string; featuresDir: string; tablesDir: string }): { rules: DocKind; features: DocKind; tables: DocKind } {
   return {
     rules: { ...RULES, dir: cfg.rulesDir },
     features: { ...FEATURES, dir: cfg.featuresDir, intro: FEATURES.intro.replace("doc/features", cfg.featuresDir) },
+    tables: { ...TABLES, dir: cfg.tablesDir, intro: TABLES.intro.replace("doc/table-changes", cfg.tablesDir) },
   };
 }
 
@@ -237,7 +247,7 @@ export class RuleStore {
   }
   modules(): string[] {
     if (!existsSync(this.dir)) return [];
-    return readdirSync(this.dir).filter((f) => f.endsWith(".md") && f !== "README.md").map((f) => f.slice(0, -3)).sort();
+    return readdirSync(this.dir).filter((f) => /^[a-z0-9_]+\.md$/.test(f)).map((f) => f.slice(0, -3)).sort();
   }
   read(module: string): string {
     return existsSync(this.file(module)) ? readFileSync(this.file(module), "utf8") : "";
@@ -254,7 +264,7 @@ export class RuleStore {
   find(id: string): RuleItem {
     const module = id.replace(new RegExp(`-${this.kind.idPart}\\d+$`), "");
     const item = this.parse(module).find((r) => r.id === id);
-    if (!item) throw new Error(`没有编号为 ${id} 的${this.kind === RULES ? "规则" : "条目"}`);
+    if (!item) throw new Error(`没有编号为 ${id} 的${this.kind.tag === "rule" ? "规则" : "条目"}`);
     return item;
   }
 
@@ -357,6 +367,14 @@ export class RuleStore {
     writeFileSync(this.file(module), out);
     this.refresh(module);
     return this.parse(module);
+  }
+
+  // Remove one item with its heading (board: table requests that were never taken up).
+  remove(id: string): void {
+    const item = this.find(id);
+    const lines = this.read(item.module).split("\n");
+    lines.splice(item.headingLine, item.endLine - item.headingLine);
+    writeFileSync(this.file(item.module), lines.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n"));
   }
 
   edit(id: string, title: string, body: string): RuleItem {

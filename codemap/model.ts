@@ -150,6 +150,18 @@ function modPathOf(rel: string): string {
   return parts.join("::");
 }
 
+// Schema state after replaying every migration. A file's subdirectory under migrationsDir names its
+// default schema; files directly inside it and in `publicMigrationDirs` use `public` and replay first.
+export function migrationSchema(root: string, cm: Pick<NonNullable<Config["codemap"]>, "migrationsDir" | "publicMigrationDirs">): Schema {
+  const migDir = cm.migrationsDir ? join(root, cm.migrationsDir) : null;
+  const isPublic = (p: string) => dirname(p) === migDir || cm.publicMigrationDirs.includes(basename(dirname(p)));
+  const migFiles = (migDir ? walkFiles(migDir, (p) => p.endsWith(".sql")) : [])
+    .map((p) => ({ abs: p, path: relative(root, p), sql: readFileSync(p, "utf8"), defaultSchema: isPublic(p) ? "public" : basename(dirname(p)).replace(/-/g, "_") }))
+    .sort((a, b) => (isPublic(a.abs) ? 0 : 1) - (isPublic(b.abs) ? 0 : 1) || basename(a.path).localeCompare(basename(b.path)))
+    .map(({ abs: _abs, ...f }) => f);
+  return replayMigrations(migFiles);
+}
+
 export function buildModel(root: string, cfg: Config): Model {
   const { modules, shared } = loadModules(root, cfg);
   const cm = cfg.codemap ?? { outDir: "", crates: [], migrationsDir: null, publicMigrationDirs: [], frontendRoots: [] };
@@ -467,15 +479,7 @@ export function buildModel(root: string, cfg: Config): Model {
   }
 
   // Database: replay migrations, then attach SQL literals to tables and SQL functions.
-  // A file's subdirectory under migrationsDir names its default schema; files directly inside it and
-  // in `publicMigrationDirs` use `public` and replay first.
-  const migDir = cm.migrationsDir ? join(root, cm.migrationsDir) : null;
-  const isPublic = (p: string) => dirname(p) === migDir || cm.publicMigrationDirs.includes(basename(dirname(p)));
-  const migFiles = (migDir ? walkFiles(migDir, (p) => p.endsWith(".sql")) : [])
-    .map((p) => ({ abs: p, path: relative(root, p), sql: readFileSync(p, "utf8"), defaultSchema: isPublic(p) ? "public" : basename(dirname(p)).replace(/-/g, "_") }))
-    .sort((a, b) => (isPublic(a.abs) ? 0 : 1) - (isPublic(b.abs) ? 0 : 1) || basename(a.path).localeCompare(basename(b.path)))
-    .map(({ abs: _abs, ...f }) => f);
-  const schema = replayMigrations(migFiles);
+  const schema = migrationSchema(root, cm);
   const schemaModule = new Map<string, string>();
   for (const m of modules) for (const s of m.schemas) schemaModule.set(s, m.id);
   const tableModule = new Map<string, string>();

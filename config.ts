@@ -19,6 +19,7 @@ export type Config = {
   port: number;
   rulesDir: string;
   featuresDir: string;
+  tablesDir: string;
   // Module list for grouping: a modules.yaml (see README) and/or inline { id: title }.
   modulesFile: string | null;
   modules: Record<string, string>;
@@ -58,6 +59,7 @@ export function loadConfig(root: string): Config {
     port: Number(process.env.PORT ?? raw.port ?? 4870),
     rulesDir: str(raw.rulesDir, "doc/rules"),
     featuresDir: str(raw.featuresDir, "doc/features"),
+    tablesDir: str(raw.tablesDir, "doc/table-changes"),
     modulesFile: typeof raw.modulesFile === "string" ? raw.modulesFile : null,
     modules: raw.modules && typeof raw.modules === "object" ? Object.fromEntries(Object.entries(raw.modules).map(([k, v]) => [k, String(v)])) : {},
     codemap: cm

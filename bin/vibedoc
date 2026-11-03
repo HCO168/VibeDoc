@@ -1,0 +1,10 @@
+#!/bin/bash
+# Entry point for PATH: symlink this file (e.g. into ~/.local/bin) and run `vibedoc` inside a repository.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+HOME_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+exec "${VIBEDOC_NODE:-node}" "$HOME_DIR/vibedoc.ts" "$@"

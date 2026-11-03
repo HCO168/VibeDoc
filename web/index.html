@@ -1,0 +1,1352 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VibeDoc</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --border: #dfe3e8; --text: #1d2329; --muted: #66707a; --accent: #2f6fde; --accent-bg: #e8f0fd;
+  --new: #6b7280; --new-bg: #f1f2f4; --confirm: #7c3aed; --confirm-bg: #f2ecfe; --doing: #2563eb; --doing-bg: #e8f0fe;
+  --modified: #c2410c; --modified-bg: #fff1e6; --done: #15803d; --done-bg: #e8f6ec; --parked: #8a8f98; --danger: #c62828;
+  --warn: #b45309;
+  font-family: system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15181c; --panel: #1d2126; --panel-2: #252a30; --border: #333a42; --text: #e6e9ec; --muted: #9aa3ad; --accent: #6ea0ff; --accent-bg: #1f2c44;
+    --new: #a3aab3; --new-bg: #2a2f35; --confirm: #b794f6; --confirm-bg: #2d2540; --doing: #7aa7ff; --doing-bg: #1f2b44;
+    --modified: #ff9a5c; --modified-bg: #3a2618; --done: #5fd38a; --done-bg: #1b3326; --parked: #7d848c; --danger: #ff7a7a; --warn: #f3b25b;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small { padding: 2px 8px; font-size: 12px; }
+button.graph-btn { padding: 1px 5px; line-height: 0; color: var(--muted); }
+button.graph-btn:hover { color: var(--accent); }
+.focus-up { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+input, select, textarea { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+textarea { width: 100%; min-height: 160px; resize: vertical; line-height: 1.6; }
+code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+header { position: sticky; top: 0; z-index: 5; display: flex; gap: 10px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0 8px 0 0; }
+.tabs { display: flex; gap: 2px; background: var(--panel-2); border-radius: 8px; padding: 2px; }
+.tabs button { border: 0; background: transparent; }
+.tabs button.on { background: var(--panel); box-shadow: 0 0 0 1px var(--border); }
+.spacer { flex: 1; }
+.repo-name { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.live { font-size: 12px; color: var(--muted); }
+.live.ok::before { content: "●"; color: var(--done); margin-right: 4px; }
+main { padding: 14px 16px 40px; }
+.chips { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.chip { border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+.chip.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+.board { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 10px; overflow-x: auto; }
+.col { background: var(--panel-2); border-radius: 10px; padding: 8px; min-height: 120px; }
+.col h3 { display: flex; align-items: center; gap: 6px; margin: 2px 4px 8px; font-size: 13px; }
+.col h3 .n { margin-left: auto; color: var(--muted); font-weight: 400; }
+.col.modified { background: var(--modified-bg); }
+.col.modified h3 { color: var(--modified); }
+.col.drop { outline: 2px dashed var(--accent); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; }
+.card:hover { border-color: var(--accent); }
+.card .id { font-size: 11px; color: var(--muted); display: flex; gap: 6px; }
+.card .t { margin: 3px 0; line-height: 1.4; }
+.card .m { font-size: 11px; color: var(--muted); }
+.card.modified { border-color: var(--modified); }
+.tag { display: inline-block; font-size: 11px; border-radius: 4px; padding: 0 5px; background: var(--panel-2); color: var(--muted); }
+.st { display: inline-block; font-size: 12px; border-radius: 4px; padding: 1px 7px; }
+.st.new { background: var(--new-bg); color: var(--new); } .st.confirm { background: var(--confirm-bg); color: var(--confirm); }
+.st.doing { background: var(--doing-bg); color: var(--doing); } .st.modified { background: var(--modified-bg); color: var(--modified); }
+.st.done { background: var(--done-bg); color: var(--done); } .st.parked { background: var(--panel-2); color: var(--parked); }
+.st.released { background: var(--done); color: var(--panel); }
+.doc { max-width: 860px; line-height: 1.75; font-size: 14px; cursor: text; }
+.doc .doc-h1 { font-size: 20px; margin: 4px 0 10px; }
+.doc .doc-h2 { font-size: 16px; margin: 22px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.doc .doc-h3 { font-size: 14px; margin: 14px 0 2px; display: flex; gap: 8px; align-items: center; }
+.doc p { margin: 0 0 6px; white-space: pre-line; }
+.doc blockquote { margin: 0 0 8px; padding: 2px 10px; border-left: 3px solid var(--border); color: var(--muted); }
+.doc ul, .doc ol { margin: 0 0 8px; padding-left: 22px; }
+.doc code { background: var(--panel-2); border-radius: 4px; padding: 0 4px; }
+.doc .st { border: 0; cursor: pointer; font-weight: 400; }
+.doc-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.doc-editor { width: 100%; min-height: 60vh; resize: vertical; line-height: 1.7; font-size: 13px; padding: 12px 14px; tab-size: 2; }
+.feat-link { display: flex; gap: 8px; align-items: baseline; padding: 7px 4px; border-bottom: 1px solid var(--border); cursor: pointer; flex-wrap: wrap; }
+.feat-link:hover { background: var(--accent-bg); }
+.feat-link .t { font-weight: 600; }
+.feat-link .st { border: 0; cursor: pointer; }
+.fid { color: var(--muted); font-size: 11px; }
+.mods button.dim { color: var(--muted); }
+.parked-area { margin-top: 12px; background: var(--panel-2); border-radius: 10px; padding: 8px 12px; }
+.parked-area summary { cursor: pointer; color: var(--muted); }
+.parked-area .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 8px; }
+.empty { color: var(--muted); font-size: 12px; padding: 8px 4px; }
+.map { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; }
+.mods { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; align-self: start; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; }
+.mods button { display: flex; width: 100%; border: 0; background: transparent; text-align: left; padding: 6px 8px; gap: 6px; }
+.mods button.on { background: var(--accent-bg); color: var(--accent); }
+.mods .c { margin-left: auto; color: var(--muted); font-size: 11px; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.layer-tabs { margin-bottom: 12px; }
+.row { border-bottom: 1px solid var(--border); padding: 8px 2px; }
+.row:last-child { border-bottom: 0; }
+.row .head { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.row .name { font-weight: 600; }
+.row .doc { color: var(--text); margin-top: 2px; }
+.row .doc.missing { color: var(--warn); }
+.row .head .acts { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+.row .detail { margin: 8px 0 2px; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; font-size: 13px; line-height: 1.7; }
+.row .detail .k { color: var(--muted); }
+.row.hl { background: var(--accent-bg); }
+.link { color: var(--accent); cursor: pointer; }
+.file-h { margin: 16px 0 4px; font-size: 13px; color: var(--muted); }
+.method { display: inline-block; min-width: 54px; font-size: 11px; font-weight: 700; color: var(--accent); }
+.shape { margin: 6px 0 4px; }
+.shape .shape-h { font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+.shape table { width: 100%; border-collapse: collapse; font-size: 12px; background: var(--panel); border-radius: 6px; }
+.shape th, .shape td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left; vertical-align: top; }
+.shape th { color: var(--muted); font-weight: 500; }
+.shape .nest { margin-left: 16px; border-left: 2px solid var(--border); padding-left: 8px; }
+.need-req { color: var(--modified); }
+.fields { color: var(--muted); font-size: 11px; margin-top: 2px; word-break: break-all; }
+.shape-bar { display: flex; gap: 6px; margin: 10px 0 4px; }
+.shape-bar button.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+pre.ts { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; line-height: 1.55; margin: 4px 0; white-space: pre; }
+.rulecount { font-size: 11px; border-radius: 999px; padding: 0 7px; background: var(--modified-bg); color: var(--modified); }
+.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 20; display: flex; justify-content: flex-end; }
+.drawer { width: min(560px, 100%); height: 100%; background: var(--panel); padding: 18px; overflow: auto; box-shadow: -4px 0 18px rgba(0, 0, 0, .15); }
+.drawer h2 { margin: 0 0 12px; font-size: 16px; display: flex; gap: 8px; align-items: center; }
+.drawer label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+.drawer input[type=text], .drawer select { width: 100%; }
+.drawer .bar { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.drawer .note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+.err { color: var(--danger); font-size: 12px; margin-top: 8px; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; z-index: 30; font-size: 13px; }
+.panel { min-width: 0; }
+.row .name { word-break: break-all; }
+.mods .grp-h { font-size: 11px; color: var(--muted); padding: 6px 8px 2px; }
+/* Relationship graph: a left-to-right mind map, page → API → functions → tables. */
+.graph-bar { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.graph-bar label { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; color: var(--muted); }
+.mm { overflow: auto; padding: 6px 2px 24px; --line: var(--border); }
+.mm-node { display: flex; align-items: center; }
+.mm-kids { display: flex; flex-direction: column; gap: 10px; padding-left: 16px; position: relative; }
+.mm-kids::before { content: ""; position: absolute; left: 0; top: 50%; width: 16px; border-top: 2px solid var(--line); }
+.mm-kids > .mm-node { position: relative; padding-left: 16px; }
+.mm-kids > .mm-node::before { content: ""; position: absolute; left: 0; top: 50%; width: 16px; border-top: 2px solid var(--line); }
+.mm-kids > .mm-node::after { content: ""; position: absolute; left: 0; top: -5px; bottom: -5px; border-left: 2px solid var(--line); }
+.mm-kids > .mm-node:first-child::after { top: 50%; }
+.mm-kids > .mm-node:last-child::after { bottom: 50%; }
+.mm-kids > .mm-node:only-child::after { display: none; }
+.mm-card { flex-shrink: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; max-width: 300px; line-height: 1.45; }
+.mm-card .sub { color: var(--muted); font-size: 11px; }
+.mm-card.page { border-color: var(--accent); background: var(--accent-bg); }
+.mm-card.api { width: 460px; max-width: 460px; border-left: 3px solid var(--accent); }
+.mm-card.fn { border-left: 3px solid var(--confirm); }
+.mm-card.table { border-left: 3px solid var(--done); }
+.mm-card.table.write { border-left-color: var(--modified); }
+.mm-card.dim { opacity: .65; }
+.mm-part { margin-top: 6px; }
+.mm-part-h { font-size: 11px; color: var(--muted); }
+.ft { font-size: 12px; }
+.ft-row { display: grid; grid-template-columns: minmax(80px, auto) 1fr; gap: 0 8px; padding: 1px 0; border-top: 1px dashed var(--border); }
+.ft-row:first-child { border-top: 0; }
+.ft-row .t { color: var(--muted); word-break: break-all; }
+.ft-row .d { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+.ft-nest { grid-column: 1 / -1; margin: 2px 0 4px 6px; padding-left: 8px; border-left: 2px solid var(--border); }
+.pop-chip { margin: 4px 4px 0 0; }
+.popover { position: fixed; z-index: 25; width: min(520px, calc(100vw - 24px)); max-height: 70vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .18); }
+@media (max-width: 760px) {
+  .map { grid-template-columns: 1fr; }
+  .mods { position: static; max-height: none; display: flex; overflow-x: auto; gap: 2px; }
+  .mods button { width: auto; flex-shrink: 0; white-space: nowrap; }
+  .mods .c { display: none; }
+  .board { grid-template-columns: repeat(5, 240px); }
+  .row .head { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>VibeDoc <span id="repo-name" class="repo-name"></span></h1>
+  <div class="tabs"><button data-view="board" class="on">规则看板</button><button data-view="map">代码地图</button><button data-view="graph">关系图</button><button data-view="features">功能文档</button></div>
+  <select id="module"><option value="">全部模块</option></select>
+  <input id="search" type="search" placeholder="搜索" style="width:200px">
+  <span class="spacer"></span>
+  <span id="live" class="live">连接中…</span>
+  <button id="new-rule" class="primary">新建规则</button>
+  <button id="stop" title="停止后台服务；下次从 VibeDoc App 或命令行再启动">停止服务</button>
+</header>
+<main id="main"></main>
+<script>
+const TOKEN = "__BOARD_TOKEN__";
+// Repository settings from vibedoc.config.json (name, document directories, whether the code map is on).
+const CONFIG = "__BOARD_CONFIG__";
+const LAYERS = { frontend: "前端", api: "API", backend: "后端", database: "数据库" };
+const MAP_TABS = { ...LAYERS, structs: "结构体" };
+const COLUMNS = [["new", "新提出"], ["confirm", "待你确认"], ["doing", "进行中"], ["modified", "已修改"], ["done", "已实现"]];
+const STATUS = { new: "新提出", confirm: "待你确认", doing: "进行中", modified: "已修改", done: "已实现", parked: "搁置" };
+const MOVES = { new: [["parked", "搁置"]], parked: [["new", "恢复"]], confirm: [["doing", "确认计划，开始做"], ["new", "退回"]] };
+// Feature document statuses, in the order the summary shows them.
+const FEATURE_STATUS = [["released", "已上线"], ["done", "已持久化"], ["doing", "开发中"], ["confirm", "待你确认"], ["modified", "已修改"], ["new", "新提出"], ["parked", "搁置"]];
+const FSTATUS = Object.fromEntries(FEATURE_STATUS);
+
+const savedMode = (() => { try { return localStorage.getItem("shapeMode"); } catch { return null; } })();
+const saved = (k, fallback) => { try { return localStorage.getItem(k) ?? fallback; } catch { return fallback; } };
+const remember = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const state = {
+  shapeMode: savedMode === "ts" ? "ts" : "table", view: "board", module: "", layer: "", search: "", mapLayer: "api", open: new Set(), highlight: null, code: null, rules: [],
+  // Code map: the selected group per tab; each layer is grouped its own way (see GROUPS).
+  mapGroup: {},
+  features: { modules: [], items: [] },
+  feat: { module: saved("featModule", ""), status: "" },
+  graph: { group: "", page: "", focus: null, bodies: saved("graphBodies", "inline"), shared: saved("graphShared", "0") === "1", allFns: saved("graphAllFns", "0") === "1" },
+};
+
+const h = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+};
+const toast = (msg) => {
+  const t = h("div", { class: "toast" }, msg);
+  document.body.append(t);
+  setTimeout(() => t.remove(), 2200);
+};
+async function api(method, path, data) {
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json", "X-Board-Token": TOKEN }, body: data ? JSON.stringify(data) : undefined });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `请求失败（${res.status}）`);
+  return json;
+}
+const firstPara = (s) => (s || "").split(/\n\s*\n/)[0].replace(/\n/g, " ");
+const matches = (...texts) => !state.search || texts.some((t) => (t || "").toLowerCase().includes(state.search.toLowerCase()));
+const modTitle = (id) => state.code?.modules.find((m) => m.id === id)?.title || id;
+
+// ---------- data ----------
+async function loadRules() {
+  state.rules = (await (await fetch("/api/rules")).json()).items;
+}
+async function loadFeatures() {
+  state.features = await (await fetch("/api/features")).json();
+}
+async function loadCode() {
+  const data = await (await fetch("/api/codemap")).json();
+  // Without a code map the server sends only the module list.
+  for (const k of ["functions", "routes", "tables", "types", "frontendFiles", "frontendRoutes", "backends"]) data[k] ??= [];
+  data.fnById = new Map(data.functions.map((f) => [f.id, f]));
+  data.routeById = new Map(data.routes.map((r) => [r.id, r]));
+  data.tableByKey = new Map(data.tables.map((t) => [t.key, t]));
+  data.typeById = new Map(data.types.map((t) => [t.id, t]));
+  data.handlers = new Set(data.routes.map((r) => r.handler).filter(Boolean));
+  state.code = data;
+  const sel = document.getElementById("module");
+  const cur = sel.value;
+  sel.replaceChildren(h("option", { value: "" }, "全部模块"), ...data.modules.map((m) => h("option", { value: m.id }, `${m.title}（${m.id}）`)));
+  sel.value = cur;
+}
+const rulesFor = (target) => state.rules.filter((r) => r.target === target);
+
+// ---------- grouping ----------
+// Each layer is grouped its own way: frontend by app/page directory, API by first path segment,
+// backend by the service (binary) that reaches it, structs by the file that declares them, tables by schema.
+const NO_BACKEND = "（未接入任何后端）";
+function frontGroup(file) {
+  let m;
+  if ((m = /^frontend\/main-frontend\/src\/pages\/([^/]+)\//.exec(file))) return m[1];
+  if (/^frontend\/main-frontend\/src\/pages\/[^/]+$/.test(file)) return "pages";
+  if (file.startsWith("frontend/main-frontend/")) return "main-frontend 公共";
+  if ((m = /^frontend\/([^/]+)\//.exec(file))) return m[1] === "packages" ? "shared" : m[1];
+  return "其他";
+}
+const apiGroup = (r) => `/${r.path.split("/")[1] || ""}`;
+const backendGroups = (f) => (f.backends.length ? f.backends : [NO_BACKEND]);
+function structGroup(file) {
+  const crate = file.split("/")[1];
+  const stem = file.split("/").pop().replace(/\.rs$/, "");
+  return crate === "main-backend" ? stem : `${crate}/${stem}`;
+}
+const tableSchema = (key) => key.split(".")[0];
+const isRouted = (f) => state.code.handlers.has(f.id);
+const backendFns = () => state.code.functions.filter((f) => f.layer === "backend" || (f.layer === "api" && !isRouted(f)));
+const repoFns = () => state.code.functions.filter((f) => f.layer === "database");
+// [group, count] for a tab, sorted by name.
+function groupsOf(layer) {
+  const c = state.code;
+  const count = new Map();
+  const add = (g) => count.set(g, (count.get(g) || 0) + 1);
+  if (layer === "frontend") c.frontendFiles.forEach((f) => add(frontGroup(f.file)));
+  else if (layer === "api") c.routes.forEach((r) => add(apiGroup(r)));
+  else if (layer === "backend") backendFns().forEach((f) => backendGroups(f).forEach(add));
+  else if (layer === "structs") c.types.forEach((t) => add(structGroup(t.file)));
+  else if (layer === "database") c.tables.forEach((t) => add(t.schema));
+  return [...count].sort(([a], [b]) => (a === NO_BACKEND) - (b === NO_BACKEND) || a.localeCompare(b));
+}
+function currentGroup(layer) {
+  const groups = groupsOf(layer);
+  const cur = state.mapGroup[layer];
+  if (groups.some(([g]) => g === cur)) return cur;
+  // Start on the largest group.
+  const first = ([...groups].sort((a, b) => b[1] - a[1])[0] || [""])[0];
+  state.mapGroup[layer] = first;
+  return first;
+}
+
+// ---------- target helpers ----------
+function targetLabel(target) {
+  if (!target || !state.code) return target;
+  const [kind, ...rest] = target.split(":");
+  const id = rest.join(":");
+  if (kind === "fn") return state.code.fnById.get(id)?.key || id;
+  if (kind === "type") return state.code.typeById.get(id)?.name || id;
+  return id;
+}
+function targetPlace(target) {
+  const [kind, ...rest] = target.split(":");
+  const id = rest.join(":");
+  const c = state.code;
+  if (kind === "fn" && c.fnById.has(id)) {
+    const f = c.fnById.get(id);
+    const route = c.routes.find((r) => r.handler === id);
+    if (route) return { layer: "api", group: apiGroup(route), key: `route:${route.id}` };
+    if (f.layer === "database" && f.tables.length) return { layer: "database", group: tableSchema(f.tables[0].name), key: target };
+    return { layer: "backend", group: backendGroups(f)[0], key: target };
+  }
+  if (kind === "route" && c.routeById.has(id)) return { layer: "api", group: apiGroup(c.routeById.get(id)), key: target };
+  if (kind === "table" && c.tableByKey.has(id)) return { layer: "database", group: c.tableByKey.get(id).schema, key: target };
+  if (kind === "type" && c.typeById.has(id)) return { layer: "structs", group: structGroup(c.typeById.get(id).file), key: target };
+  if (kind === "front") { const f = c.frontendFiles.find((x) => x.file === id); if (f) return { layer: "frontend", group: frontGroup(f.file), key: target }; }
+  return null;
+}
+function goTo(target) {
+  const p = targetPlace(target);
+  if (!p) return toast("代码里已找不到这个位置");
+  state.mapGroup[p.layer] = p.group;
+  Object.assign(state, { view: "map", mapLayer: p.layer, highlight: p.key, search: "" });
+  state.open.add(p.key);
+  document.getElementById("search").value = "";
+  render();
+  setTimeout(() => document.querySelector(".row.hl")?.scrollIntoView({ block: "center" }), 30);
+}
+
+// ---------- board ----------
+function card(r) {
+  const el = h("div", { class: `card ${r.effective}`, draggable: r.effective === "new" || r.effective === "parked" ? "true" : null, onclick: () => openRule(r) },
+    h("div", { class: "id" }, h("span", {}, r.id), h("span", { class: "tag" }, r.layer ? LAYERS[r.layer] : "未分层"), state.module ? null : h("span", { class: "tag" }, r.module)),
+    h("div", { class: "t" }, r.title),
+    r.target ? h("div", { class: "m mono" }, "→ ", targetLabel(r.target)) : null,
+    r.effective === "modified" ? h("div", { class: "m", style: "color:var(--modified)" }, "你改过，等 AI 同步") : null,
+    r.date ? h("div", { class: "m" }, r.date) : null);
+  el.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", r.id));
+  return el;
+}
+function dropZone(el, status) {
+  el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drop"); });
+  el.addEventListener("dragleave", () => el.classList.remove("drop"));
+  el.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    el.classList.remove("drop");
+    const id = e.dataTransfer.getData("text/plain");
+    const r = state.rules.find((x) => x.id === id);
+    if (!r || r.effective === status) return;
+    try { await api("POST", `/api/rules/${id}/status`, { status }); } catch (err) { toast(err.message); }
+  });
+}
+function renderBoard() {
+  const items = state.rules.filter((r) => (!state.module || r.module === state.module) && (!state.layer || r.layer === state.layer) && matches(r.title, r.body, r.id));
+  const chips = h("div", { class: "chips" },
+    [["", "全部层"], ...Object.entries(LAYERS)].map(([k, v]) => h("button", { class: `chip ${state.layer === k ? "on" : ""}`, onclick: () => { state.layer = k; render(); } }, v)));
+  const board = h("div", { class: "board" }, COLUMNS.map(([key, name]) => {
+    const list = items.filter((r) => r.effective === key);
+    const col = h("div", { class: `col ${key}` }, h("h3", {}, h("span", { class: `st ${key}` }, name), h("span", { class: "n" }, list.length)),
+      list.length ? list.map(card) : h("div", { class: "empty" }, key === "new" ? (CONFIG.codemap ? "点右上角「新建规则」，或在代码地图里点「提要求」" : "点右上角「新建规则」") : "无"));
+    if (key === "new") dropZone(col, "new");
+    return col;
+  }));
+  const parked = items.filter((r) => r.effective === "parked");
+  const area = h("details", { class: "parked-area", open: parked.length ? null : null }, h("summary", {}, `搁置 ${parked.length} 条（把「新提出」的卡片拖到这里即可搁置）`), h("div", { class: "cards" }, parked.map(card)));
+  dropZone(area, "parked");
+  const total = h("div", { class: "empty", style: "padding:0 0 10px" }, `共 ${items.length} 条规则。规则保存在 ${CONFIG.rulesDir}/<模块>.md，只有你能改原文；AI 只能通过 vibedoc rules 命令更新状态。`);
+  return [chips, total, board, area];
+}
+
+// ---------- rule drawer ----------
+function drawer(content) {
+  const ov = h("div", { class: "overlay", onclick: (e) => { if (e.target === ov) close(); } }, h("div", { class: "drawer" }, content));
+  const close = () => { ov.remove(); document.removeEventListener("keydown", esc); };
+  const esc = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", esc);
+  document.body.append(ov);
+  return close;
+}
+function openRule(r) {
+  const title = h("input", { type: "text", value: r.title });
+  const body = h("textarea", {}, r.body);
+  const err = h("div", { class: "err" });
+  const moves = (MOVES[r.effective] || []).map(([to, label]) => h("button", { onclick: async () => {
+    try { await api("POST", `/api/rules/${r.id}/status`, { status: to }); close(); toast(`已改为「${STATUS[to]}」`); } catch (e) { err.textContent = e.message; }
+  } }, label));
+  const note = {
+    new: "AI 还没处理。需要它执行时，在对话里说「同步这条规则」或使用下面的同步指令。",
+    confirm: "AI 已在对话里给出执行计划。确认后状态变为「进行中」，AI 才会开始改代码。",
+    doing: "AI 正在实现。",
+    modified: "AI 处理过这条规则后你又改了原文。让 AI 同步时，它会对比上次的原文，只针对你改动的部分出计划。",
+    done: "已实现。再改原文，这张卡片会自动变成「已修改」。",
+    parked: "暂时不做。",
+  }[r.effective];
+  const close = drawer([
+    h("h2", {}, h("span", { class: `st ${r.effective}` }, STATUS[r.effective]), h("span", { class: "mono" }, r.id)),
+    h("div", { class: "note" }, `${modTitle(r.module)} · ${r.layer ? LAYERS[r.layer] : "未分层"}${r.date ? ` · 最近状态变化 ${r.date}` : ""}`),
+    r.target ? h("div", { class: "note" }, "针对：", h("span", { class: "link mono", onclick: () => { close(); goTo(r.target); } }, targetLabel(r.target))) : null,
+    r.impl?.length ? h("div", { class: "note" }, "落实到：", h("span", { class: "mono" }, r.impl.join("、"))) : null,
+    h("label", {}, "标题"), title,
+    h("label", {}, "内容（口语即可）"), body,
+    err,
+    h("div", { class: "bar" },
+      h("button", { class: "primary", onclick: async () => {
+        try { await api("PUT", `/api/rules/${r.id}`, { title: title.value, body: body.value }); close(); toast("已保存"); } catch (e) { err.textContent = e.message; }
+      } }, "保存"),
+      moves,
+      h("button", { onclick: async () => { await navigator.clipboard.writeText(`同步规则 ${r.id}`); toast("已复制，粘贴到和 AI 的对话里"); } }, "复制同步指令")),
+    h("div", { class: "note" }, note),
+  ]);
+  setTimeout(() => body.focus(), 30);
+}
+function newRule(preset = {}) {
+  const mods = state.code?.modules || [];
+  const module = h("select", {}, mods.map((m) => h("option", { value: m.id }, `${m.title}（${m.id}）`)));
+  module.value = preset.module || state.module || mods[0]?.id;
+  const layer = h("select", {}, Object.entries(LAYERS).map(([k, v]) => h("option", { value: k }, v)));
+  layer.value = preset.layer || state.layer || "backend";
+  const title = h("input", { type: "text", placeholder: "一句话说清楚要什么，例如：分享链接默认 7 天过期" });
+  const body = h("textarea", { placeholder: "细节、例外、优先级……口语即可" });
+  const err = h("div", { class: "err" });
+  let target = preset.target || null;
+  const targetRow = h("div", { class: "note" });
+  const paintTarget = () => targetRow.replaceChildren(...(target ? ["针对：", h("span", { class: "mono" }, targetLabel(target)), " ", h("button", { class: "small", onclick: () => { target = null; paintTarget(); } }, "不指定")] : ["不针对具体函数／接口／表"]));
+  paintTarget();
+  const close = drawer([
+    h("h2", {}, "新建规则"),
+    targetRow,
+    h("label", {}, "模块"), module,
+    h("label", {}, "层"), layer,
+    h("label", {}, "标题"), title,
+    h("label", {}, "内容"), body,
+    err,
+    h("div", { class: "bar" }, h("button", { class: "primary", onclick: async () => {
+      if (!title.value.trim()) { err.textContent = "先写一个标题"; return; }
+      try {
+        const r = await api("POST", "/api/rules", { module: module.value, layer: layer.value, title: title.value, body: body.value, target });
+        close();
+        toast(`已保存为 ${r.id}，写入 ${CONFIG.rulesDir}/${r.module}.md`);
+      } catch (e) { err.textContent = e.message; }
+    } }, "保存")),
+    h("div", { class: "note" }, "保存后出现在「新提出」。AI 不会自动执行，需要你在对话里让它同步。"),
+  ]);
+  title.addEventListener("input", () => { err.textContent = ""; });
+  setTimeout(() => title.focus(), 30);
+}
+
+// ---------- feature document ----------
+// Minimal Markdown for the feature document: headings, paragraphs, lists, quotes, code fences, `code`, **bold**.
+function mdInline(text) {
+  const out = [];
+  const re = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(m[0].startsWith("`") ? h("code", { class: "mono" }, m[0].slice(1, -1)) : h("strong", {}, m[0].slice(2, -2)));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+function mdBlocks(text, heading3) {
+  const lines = text.split("\n");
+  const out = [];
+  const special = /^(#{1,6}\s|>|```|\s*[-*]\s+|\s*\d+\.\s+)/;
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (line.startsWith("```")) {
+      const buf = [];
+      for (i++; i < lines.length && !lines[i].startsWith("```"); i++) buf.push(lines[i]);
+      i++;
+      out.push(h("pre", { class: "ts mono" }, buf.join("\n")));
+      continue;
+    }
+    const hm = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (hm) { out.push(hm[1].length === 3 ? heading3(hm[2]) : h(`h${Math.min(hm[1].length + 1, 6)}`, { class: `doc-h${hm[1].length}` }, mdInline(hm[2]))); i++; continue; }
+    const take = (test, strip) => { const buf = []; while (i < lines.length && test.test(lines[i])) buf.push(lines[i++].replace(strip, "")); return buf; };
+    if (/^>\s?/.test(line)) { out.push(h("blockquote", {}, mdInline(take(/^>\s?/, /^>\s?/).join("\n")))); continue; }
+    if (/^\s*[-*]\s+/.test(line)) { out.push(h("ul", {}, take(/^\s*[-*]\s+/, /^\s*[-*]\s+/).map((t) => h("li", {}, mdInline(t))))); continue; }
+    if (/^\s*\d+\.\s+/.test(line)) { out.push(h("ol", {}, take(/^\s*\d+\.\s+/, /^\s*\d+\.\s+/).map((t) => h("li", {}, mdInline(t))))); continue; }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !special.test(lines[i])) buf.push(lines[i++]);
+    out.push(h("p", {}, mdInline(buf.join("\n"))));
+  }
+  return out;
+}
+const FEATURE_NOTES = {
+  new: "AI 还没处理。需要它规划时，把同步指令发给 AI。",
+  confirm: "AI 已在对话里给出计划。确认后变为「开发中」，AI 才会开始改代码。",
+  doing: "AI 正在开发。",
+  modified: "AI 记录过这条功能后你又改了它。让 AI 同步时，它会对比上次的内容，只针对你改动的部分出计划。",
+  done: "已持久化：代码已合入开发主分支。再改内容会自动变成「已修改」。",
+  released: "已上线正式站。再改内容会自动变成「已修改」。",
+  parked: "暂时不做。",
+};
+// Status pill of a feature: opens a small menu with what the status means and the moves the user may make.
+function statusPill(f) {
+  const open = (e) => {
+    e.stopPropagation();
+    const key = `feat|${f.id}`;
+    if (popover?.dataset.key === key) { closePopover(); return; }
+    const moves = (MOVES[f.effective] || []).map(([to, label]) => h("button", { class: "small", onclick: async () => {
+      closePopover();
+      try { await api("POST", `/api/features/${f.id}/status`, { status: to }); toast(`已改为「${FSTATUS[to]}」`); } catch (err) { toast(err.message); }
+    } }, label));
+    openPopover(e.currentTarget, key, [FSTATUS[f.effective], " · ", h("span", { class: "mono" }, f.id), f.date ? ` · ${f.date}` : ""], h("div", { style: "max-width:320px" },
+      h("div", { style: "font-size:12px;line-height:1.6;margin-bottom:8px" }, FEATURE_NOTES[f.effective]),
+      h("div", { class: "bar", style: "display:flex;gap:6px;flex-wrap:wrap" }, moves,
+        h("button", { class: "small", onclick: async () => { closePopover(); await navigator.clipboard.writeText(`同步功能 ${f.id}`); toast("已复制，粘贴到和 AI 的对话里"); } }, "复制同步指令"))));
+  };
+  return h("button", { class: `st pop-chip ${f.effective}`, title: "状态与操作", onclick: open }, FSTATUS[f.effective]);
+}
+function featureLink(f) {
+  return h("div", { class: "feat-link", onclick: () => { state.feat.module = f.module; state.feat.status = ""; state.feat.jump = f.id; document.getElementById("search").value = ""; state.search = ""; render(); } },
+    statusPill(f), h("span", { class: "t" }, f.title), h("span", { class: "fid mono" }, `${modTitle(f.module)} · ${f.section || "未分组"} · ${f.id}`));
+}
+function startEditing(id, doc) {
+  const el = h("textarea", { class: "doc-editor mono", spellcheck: "false" });
+  el.value = doc?.text || `# ${modTitle(id)}（${id}）\n\n> 功能与架构文档：只写这个模块做什么、怎么组成，不写代码细节。格式与状态见 \`${CONFIG.featuresDir}/README.md\`。\n\n模块概述与架构。\n\n## 待规划\n\n### 第一条功能\n描述。\n`;
+  const grow = () => { el.style.height = "auto"; el.style.height = `${el.scrollHeight + 4}px`; };
+  el.addEventListener("input", () => { state.feat.edit.dirty = el.value !== state.feat.edit.base; grow(); });
+  el.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveEditing(); }
+    if (e.key === "Escape") { e.preventDefault(); cancelEditing(); }
+  });
+  state.feat.edit = { module: id, version: doc?.version || "", base: el.value, dirty: false, el, error: "" };
+  render();
+  grow();
+  el.focus();
+}
+function cancelEditing() {
+  if (state.feat.edit?.dirty && !confirm("放弃未保存的修改？")) return;
+  state.feat.edit = null;
+  render();
+}
+async function saveEditing() {
+  const ed = state.feat.edit;
+  if (!ed) return;
+  try {
+    await api("PUT", `/api/features/doc/${ed.module}`, { text: ed.el.value, version: ed.version });
+    state.feat.edit = null;
+    await loadFeatures();
+    render();
+    toast("已保存。改过的功能会标为「已修改」，新写的功能标为「新提出」");
+  } catch (e) {
+    ed.error = e.message;
+    render();
+  }
+}
+window.addEventListener("beforeunload", (e) => { if (state.feat.edit?.dirty) e.preventDefault(); });
+function renderFeatures() {
+  const { modules, items } = state.features;
+  const codeMods = state.code?.modules || [];
+  const ids = [...new Set([...modules.map((m) => m.module), ...codeMods.map((m) => m.id)])];
+  if (!ids.includes(state.feat.module)) state.feat.module = modules[0]?.module || ids[0] || "";
+  const visible = items.filter((f) => matches(f.title, f.body, f.id, f.section));
+  const count = (s) => items.filter((f) => f.effective === s).length;
+  const editing = state.feat.edit;
+  const chips = h("div", { class: "chips" },
+    h("button", { class: `chip ${state.feat.status ? "" : "on"}`, onclick: () => { state.feat.status = ""; render(); } }, "按模块阅读"),
+    FEATURE_STATUS.filter(([s]) => count(s)).map(([s, name]) => h("button", { class: `chip ${state.feat.status === s ? "on" : ""}`, onclick: () => { state.feat.status = s; render(); } }, `${name} ${count(s)}`)));
+  const side = h("div", { class: "mods" }, h("div", { class: "grp-h" }, "模块"), ids.map((id) => {
+    const n = items.filter((f) => f.module === id).length;
+    const pending = items.filter((f) => f.module === id && ["new", "modified", "confirm"].includes(f.effective)).length;
+    return h("button", { class: `${id === state.feat.module && !state.feat.status ? "on" : ""} ${n ? "" : "dim"}`, title: n ? "" : "还没有功能文档", onclick: () => { state.feat.module = id; state.feat.status = ""; remember("featModule", id); render(); window.scrollTo(0, 0); } },
+      h("span", {}, modTitle(id)), pending ? h("span", { class: "rulecount" }, pending) : null, h("span", { class: "c" }, n || ""));
+  }));
+  let body;
+  if (state.feat.status || (state.search && !editing)) {
+    // A status (or a search) across all modules: what is live, persisted, in progress or waiting.
+    const list = visible.filter((f) => !state.feat.status || f.effective === state.feat.status);
+    body = [h("div", { class: "empty", style: "padding:0 0 8px" }, `${list.length} 条，点一条跳到它在文档里的位置`), ...list.map(featureLink)];
+  } else {
+    const id = state.feat.module;
+    const doc = modules.find((m) => m.module === id);
+    if (editing && editing.module === id) {
+      body = [
+        h("div", { class: "doc-bar" },
+          h("button", { class: "primary", onclick: saveEditing }, "保存"),
+          h("button", { onclick: cancelEditing }, "取消"),
+          h("span", { class: "empty" }, "Markdown：「## 」是分组，「### 」是一条功能。⌘／Ctrl+S 保存，Esc 取消。改名的功能按位置保留原状态。")),
+        editing.error ? h("div", { class: "err" }, editing.error) : null,
+        editing.el,
+      ];
+    } else {
+      const own = items.filter((f) => f.module === id);
+      let k = 0;
+      const heading3 = (title) => {
+        const f = own[k++];
+        return h("h4", { class: "doc-h3", id: f ? `feat-${f.id}` : null }, mdInline(title), f ? statusPill(f) : null);
+      };
+      body = [
+        h("div", { class: "doc-bar" },
+          h("button", { class: "primary", onclick: () => startEditing(id, doc) }, doc ? "编辑文档" : "开始写这个模块"),
+          editing ? h("span", { class: "err", style: "margin:0" }, `「${modTitle(editing.module)}」还有未保存的编辑`) : null),
+        doc ? h("div", { class: "doc", ondblclick: () => startEditing(id, doc) }, mdBlocks(doc.text, heading3))
+          : h("div", { class: "empty" }, `还没有 ${CONFIG.featuresDir}/${id}.md。点「开始写这个模块」，或让 AI 生成这个模块的功能文档。`),
+      ];
+    }
+  }
+  const info = h("div", { class: "empty", style: "padding:0 0 8px" }, "只写功能和架构，不写代码细节。AI 维护正文并标注状态（已持久化＝合入开发主分支，已上线＝正式发布）；你可以直接编辑整篇文档（双击正文也可进入编辑），改过的功能会标为「已修改」，等你让 AI 同步。点状态可搁置、确认计划或复制同步指令。");
+  if (state.feat.jump) {
+    const target = state.feat.jump;
+    state.feat.jump = null;
+    setTimeout(() => document.getElementById(`feat-${target}`)?.scrollIntoView({ block: "center" }), 0);
+  }
+  return [h("div", { class: "map" }, side, h("div", { class: "panel" }, chips, info, body))];
+}
+function newFeature() {
+  const mods = state.code?.modules || [];
+  const module = h("select", {}, mods.map((m) => h("option", { value: m.id }, `${m.title}（${m.id}）`)));
+  module.value = state.feat.module || mods[0]?.id;
+  const list = h("datalist", { id: "feat-sections" });
+  const section = h("input", { type: "text", list: "feat-sections", value: "待规划" });
+  const paintSections = () => list.replaceChildren(...(state.features.modules.find((m) => m.module === module.value)?.sections || []).map((s) => h("option", { value: s })));
+  module.addEventListener("change", paintSections);
+  paintSections();
+  const title = h("input", { type: "text", placeholder: "一句话说清楚要什么功能，例如：网盘文件夹可以设置访问密码" });
+  const body = h("textarea", { placeholder: "谁用、在什么场景、要达到什么效果、有什么限制……口语即可，不用写实现" });
+  const err = h("div", { class: "err" });
+  const close = drawer([
+    h("h2", {}, "提新功能"),
+    h("label", {}, "模块"), module,
+    h("label", {}, "放在哪个分组"), section, list,
+    h("label", {}, "功能名"), title,
+    h("label", {}, "描述"), body,
+    err,
+    h("div", { class: "bar" }, h("button", { class: "primary", onclick: async () => {
+      if (!title.value.trim()) { err.textContent = "先写一个功能名"; return; }
+      try {
+        const f = await api("POST", "/api/features", { module: module.value, section: section.value || "待规划", title: title.value, body: body.value });
+        close();
+        state.view = "features"; state.feat.module = f.module; state.feat.status = "";
+        render();
+        toast(`已保存为 ${f.id}，写入 ${CONFIG.featuresDir}/${f.module}.md`);
+      } catch (e) { err.textContent = e.message; }
+    } }, "保存")),
+    h("div", { class: "note" }, "保存后标为「新提出」。AI 不会自动开发：在对话里说「同步功能」加编号，它会先把需求整理进功能文档并给出计划，等你确认再动手。"),
+  ]);
+  title.addEventListener("input", () => { err.textContent = ""; });
+  setTimeout(() => title.focus(), 30);
+}
+
+// ---------- code map ----------
+function askButton(target, module, layer) {
+  const n = rulesFor(target).length;
+  return [
+    n ? h("span", { class: "rulecount", title: "已有规则" }, `${n} 条规则`) : null,
+    h("button", { class: "small", onclick: (e) => { e.stopPropagation(); newRule({ module, layer, target }); } }, "提要求"),
+  ];
+}
+const GRAPH_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><circle cx="12.5" cy="3.5" r="2"/><circle cx="12.5" cy="12.5" r="2"/><path d="M5.3 7.1 10.7 4.4M5.3 8.9l5.4 2.7"/></svg>';
+// Small icon that opens the relationship graph starting from a code-map item (same keys as rows).
+function graphButton(key) {
+  const b = h("button", { class: "small graph-btn", title: "在关系图中查看", "aria-label": "在关系图中查看", onclick: (e) => { e.stopPropagation(); openGraph(key); } });
+  b.innerHTML = GRAPH_ICON;
+  return b;
+}
+function fnRef(id) {
+  const f = state.code.fnById.get(id);
+  return h("span", { class: "link mono", onclick: () => goTo(`fn:${id}`) }, f ? f.key : id);
+}
+function joinNodes(nodes) {
+  const out = [];
+  nodes.forEach((n, i) => { if (i) out.push("、"); out.push(n); });
+  return out;
+}
+function row(key, head, detail) {
+  const isOpen = state.open.has(key);
+  const el = h("div", { class: `row ${state.highlight === key ? "hl" : ""}` });
+  const headEl = h("div", { class: "head", onclick: () => { isOpen ? state.open.delete(key) : state.open.add(key); state.highlight = null; render(); } }, head);
+  el.append(headEl);
+  if (isOpen) el.append(h("div", { class: "detail" }, detail()));
+  return el;
+}
+function fnRow(f) {
+  const key = `fn:${f.id}`;
+  const module = f.module;
+  return row(key, [
+    h("div", { style: "min-width:0" },
+      h("div", {}, h("span", { class: "name mono" }, f.key.split("::").slice(1).join("::")), f.sharedWith.length ? h("span", { class: "tag", style: "margin-left:6px" }, `共用：${f.sharedWith.join("、")}`) : null),
+      f.docs ? h("div", { class: "doc" }, firstPara(f.docs)) : null),
+    h("span", { class: "acts" }, askButton(key, module, f.layer), graphButton(key)),
+  ], () => [
+    f.docs && f.docs.includes("\n") ? h("div", { style: "white-space:pre-wrap" }, f.docs) : null,
+    h("div", { class: "mono" }, f.signature),
+    h("div", {}, h("span", { class: "k" }, "位置："), h("span", { class: "mono" }, `${f.file}:${f.line}`)),
+    state.code.routes.filter((r) => r.handler === f.id).length ? h("div", {}, h("span", { class: "k" }, "接口："), joinNodes(state.code.routes.filter((r) => r.handler === f.id).map((r) => h("span", { class: "link mono", onclick: () => goTo(`route:${r.id}`) }, r.id)))) : null,
+    f.callers.length ? h("div", {}, h("span", { class: "k" }, "被调用："), joinNodes(f.callers.map(fnRef))) : null,
+    f.callees.length ? h("div", {}, h("span", { class: "k" }, "调用："), joinNodes(f.callees.map(fnRef))) : null,
+    f.tables.length ? h("div", {}, h("span", { class: "k" }, "表："), joinNodes(f.tables.map((t) => h("span", { class: "link mono", onclick: () => goTo(`table:${t.name}`) }, `${t.name}${t.write ? "（写）" : ""}`)))) : null,
+    rulesFor(key).length ? h("div", {}, h("span", { class: "k" }, "相关规则："), joinNodes(rulesFor(key).map((r) => h("span", { class: "link", onclick: () => openRule(r) }, `${r.id} ${r.title}（${STATUS[r.effective]}）`)))) : null,
+  ]);
+}
+function byFile(fns) {
+  const groups = new Map();
+  for (const f of fns) groups.set(f.file, [...(groups.get(f.file) || []), f]);
+  const out = [];
+  for (const [file, list] of [...groups].sort()) {
+    out.push(h("div", { class: "file-h mono" }, file, `（${list.length}）`));
+    out.push(...list.sort((a, b) => a.line - b.line).map((f) => fnRow(f)));
+  }
+  return out.length ? out : [h("div", { class: "empty" }, "没有匹配的内容")];
+}
+// Request/response structure with nested types that expand in place.
+function typeBlock(id, ctx, depth = 0) {
+  const t = state.code.typeById.get(id);
+  if (!t) return null;
+  const key = `${ctx}>${id}`;
+  const refLink = (rid) => {
+    const rt = state.code.typeById.get(rid);
+    if (!rt) return null;
+    const k = `${key}>${rid}`;
+    return h("span", { class: "link mono", onclick: (e) => { e.stopPropagation(); state.open.has(k) ? state.open.delete(k) : state.open.add(k); render(); } }, `${state.open.has(k) ? "▾" : "▸"} ${rt.name}`);
+  };
+  const need = (f) => (f.required ? h("span", { class: "need-req" }, "必填") : f.nullable ? "可选" : "可选（有默认值）");
+  const table = t.fields.length
+    ? h("table", {}, h("tr", {}, h("th", {}, "字段"), h("th", {}, "类型"), h("th", {}, "必填"), h("th", {}, "说明")),
+      t.fields.map((f) => h("tr", {},
+        h("td", { class: "mono" }, f.json),
+        h("td", {}, h("span", { class: "mono" }, f.type), f.refs.length ? h("div", {}, joinNodes(f.refs.map(refLink).filter(Boolean))) : null),
+        h("td", {}, need(f)),
+        h("td", {}, [f.docs ? firstPara(f.docs) : "", ...f.notes, f.json !== f.rust ? `Rust 字段 ${f.rust}` : ""].filter(Boolean).join("；")))))
+    : t.variants.length
+      ? h("table", {}, h("tr", {}, h("th", {}, "取值"), h("th", {}, "内容"), h("th", {}, "说明")),
+        t.variants.map((v) => h("tr", {}, h("td", { class: "mono" }, v.json), h("td", {}, h("span", { class: "mono" }, v.payload), v.refs.length ? h("div", {}, joinNodes(v.refs.map(refLink).filter(Boolean))) : null), h("td", {}, firstPara(v.docs)))))
+      : h("div", { class: "empty" }, t.alias ? `类型别名：${t.alias}` : "无字段");
+  const nested = depth < 5
+    ? [...new Set([...t.fields.flatMap((f) => f.refs), ...t.variants.flatMap((v) => v.refs)])].filter((rid) => state.open.has(`${key}>${rid}`)).map((rid) => typeBlock(rid, key, depth + 1))
+    : [];
+  return h("div", { class: `shape ${depth ? "nest" : ""}` },
+    h("div", { class: "shape-h" }, h("span", { class: "mono", style: "color:var(--text)" }, t.name + (t.generics || "")), t.docs ? ` — ${firstPara(t.docs)}` : "", t.notes.length ? `（${t.notes.join("；")}）` : "", ` · ${t.file.split("/").pop()}:${t.line}`),
+    table, nested);
+}
+// ---------- Rust type → TypeScript ----------
+function tyParse(text) {
+  const toks = text.match(/'\w+|[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*|[<>(),\[\];&]|\d+/g) || [];
+  let i = 0;
+  const one = () => {
+    while (toks[i] === "&" || /^'/.test(toks[i] || "") || toks[i] === "mut" || toks[i] === "dyn") i++;
+    const t = toks[i++];
+    if (t === "(") {
+      const items = [];
+      while (toks[i] && toks[i] !== ")") { items.push(one()); if (toks[i] === ",") i++; }
+      i++;
+      return { tuple: items };
+    }
+    if (t === "[") {
+      const inner = one();
+      while (toks[i] && toks[i] !== "]") i++;
+      i++;
+      return { array: inner };
+    }
+    const node = { name: (t || "").split("::").pop(), args: [] };
+    if (toks[i] === "<") {
+      i++;
+      while (toks[i] && toks[i] !== ">") { node.args.push(one()); if (toks[i] === ",") i++; }
+      i++;
+    }
+    return node;
+  };
+  return one();
+}
+const TS_NUM = /^(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|Decimal|NonZero\w*)$/;
+const TS_STR = /^(String|str|char|Uuid|DateTime|NaiveDate|NaiveDateTime|NaiveTime|Url|PathBuf|IpAddr|SocketAddr)$/;
+const tsWrap = (s) => (/[|]/.test(s) && !/^[{[]/.test(s) ? `(${s})` : s);
+const tsKey = (k) => (/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k));
+function findType(name, refs) {
+  return refs.map((id) => state.code.typeById.get(id)).find((t) => t && t.name === name) || state.code.types.find((t) => t.name === name);
+}
+function tsOf(n, refs, ind, seen, bind) {
+  if (!n) return "unknown";
+  if (n.tuple) return n.tuple.length ? `[${n.tuple.map((x) => tsOf(x, refs, ind, seen, bind)).join(", ")}]` : "null";
+  if (n.array) return `${tsWrap(tsOf(n.array, refs, ind, seen, bind))}[]`;
+  if (bind && bind[n.name]) return tsOf(bind[n.name].node, bind[n.name].refs, ind, seen, bind[n.name].bind);
+  const a = n.args;
+  switch (n.name) {
+    case "Option": return `${tsOf(a[0], refs, ind, seen, bind)} | null`;
+    case "Vec": case "VecDeque": case "HashSet": case "BTreeSet": return `${tsWrap(tsOf(a[0], refs, ind, seen, bind))}[]`;
+    case "HashMap": case "BTreeMap": case "IndexMap": return `Record<string, ${tsOf(a[1], refs, ind, seen, bind)}>`;
+    case "Box": case "Arc": case "Rc": case "Cow": case "Json": return tsOf(a[a.length - 1], refs, ind, seen, bind);
+    case "bool": return "boolean";
+    case "Value": return "unknown";
+  }
+  if (TS_NUM.test(n.name)) return "number";
+  if (TS_STR.test(n.name)) return "string";
+  const t = findType(n.name, refs);
+  if (!t || seen.includes(t.id) || seen.length > 6) return n.name;
+  const names = (t.generics || "").replace(/^<|>$/g, "").split(",").map((g) => g.split(":")[0].trim()).filter((g) => g && !g.startsWith("'"));
+  const nextBind = {};
+  names.forEach((g, k) => { if (a[k]) nextBind[g] = { node: a[k], refs, bind }; });
+  return tsOfType(t, ind, [...seen, t.id], nextBind);
+}
+function tsOfType(t, ind = "", seen = [t.id], bind = {}) {
+  if (t.fields.length) {
+    const lines = [];
+    const add = (type) => {
+      for (const f of type.fields) {
+        if (f.notes.some((x) => x.startsWith("展开"))) {
+          const inner = findType(tyParse(f.type).name, f.refs);
+          if (inner && inner.fields.length && !seen.includes(inner.id)) { seen = [...seen, inner.id]; add(inner); continue; }
+        }
+        const doc = f.docs ? ` // ${firstPara(f.docs)}` : "";
+        lines.push(`${ind}  ${tsKey(f.json)}${f.required ? "" : "?"}: ${tsOf(tyParse(f.type), f.refs, ind + "  ", seen, bind)};${doc}`);
+      }
+    };
+    add(t);
+    return `{\n${lines.join("\n")}\n${ind}}`;
+  }
+  if (t.variants.length) {
+    return t.variants.map((v) => {
+      if (!v.payload) return JSON.stringify(v.json);
+      const inner = v.payload.startsWith("{") ? v.payload : tsOf(tyParse(v.payload), v.refs, ind, seen, bind);
+      return `{ ${tsKey(v.json)}: ${inner} }`;
+    }).join(" | ");
+  }
+  if (t.alias) return tsOf(tyParse(t.alias), [], ind, seen, bind);
+  return "unknown";
+}
+function routeTs(r) {
+  const a = r.api;
+  if (!a) return "";
+  const out = [];
+  const part = (label, name, text, ids) => { if (text) out.push(`// ${label}：${text}`, `type ${name} = ${tsOf(tyParse(text), ids, "", [], {})};`, ""); };
+  part("路径参数", "PathParams", a.path, r.apiRefs?.path || []);
+  part("查询参数", "Query", a.query, r.apiRefs?.query || []);
+  part(a.bodyKind === "form" ? "请求体（表单）" : "请求体（JSON）", "Body", a.body, r.apiRefs?.body || []);
+  if (a.response && !a.responseNote) part("响应（JSON）", "Response", a.response, r.apiRefs?.response || []);
+  else if (a.responseNote) out.push(`// 响应：${a.responseNote}`);
+  return out.join("\n").trim();
+}
+// Top-level JSON field names of a type (flatten merged), for previews and search.
+function fieldNames(id, depth = 0) {
+  const t = state.code.typeById.get(id);
+  if (!t || depth > 3) return [];
+  return t.fields.flatMap((f) => (f.notes.some((x) => x.startsWith("展开")) && f.refs.length ? fieldNames(f.refs[0], depth + 1) : [f.json]));
+}
+const preview = (names, max = 8) => (names.length > max ? `${names.slice(0, max).join(", ")} …+${names.length - max}` : names.join(", "));
+function shapeBar(getTs) {
+  const setMode = (m) => { state.shapeMode = m; try { localStorage.setItem("shapeMode", m); } catch {} render(); };
+  return h("div", { class: "shape-bar" },
+    h("button", { class: `small ${state.shapeMode === "table" ? "on" : ""}`, onclick: (e) => { e.stopPropagation(); setMode("table"); } }, "表格"),
+    h("button", { class: `small ${state.shapeMode === "ts" ? "on" : ""}`, onclick: (e) => { e.stopPropagation(); setMode("ts"); } }, "TS 结构"),
+    h("button", { class: "small", onclick: async (e) => { e.stopPropagation(); await navigator.clipboard.writeText(getTs()); toast("已复制 TS 结构"); } }, "复制 TS"));
+}
+function apiParts(r, key) {
+  const a = r.api;
+  if (!a) return [];
+  if (!a.path && !a.query && !a.body && !a.response && !a.responseNote && a.bodyKind !== "multipart") return [];
+  if (state.shapeMode === "ts") return [shapeBar(() => routeTs(r)), h("pre", { class: "ts mono" }, routeTs(r))];
+  const part = (label, text, ids) => text ? [h("div", { style: "margin-top:8px" }, h("span", { class: "k" }, `${label}：`), h("span", { class: "mono" }, text)), ...ids.map((id) => typeBlock(id, key))] : [];
+  return [
+    shapeBar(() => routeTs(r)),
+    ...part("路径参数", a.path, r.apiRefs?.path || []),
+    ...part("查询参数", a.query, r.apiRefs?.query || []),
+    ...part(a.bodyKind === "form" ? "请求体（表单）" : "请求体（JSON）", a.body, r.apiRefs?.body || []),
+    a.bodyKind === "multipart" ? h("div", { style: "margin-top:8px" }, h("span", { class: "k" }, "请求体："), "multipart/form-data") : null,
+    ...(a.response && !a.responseNote ? part("响应（JSON）", a.response, r.apiRefs?.response || []) : []),
+    a.responseNote ? h("div", { style: "margin-top:8px" }, h("span", { class: "k" }, "响应："), a.responseNote) : null,
+  ];
+}
+function mapContent(group, layer) {
+  const c = state.code;
+  if (layer === "api") {
+    const fieldText = (r) => (r.api?.types || []).flatMap((id) => { const t = c.typeById.get(id); return t ? [t.name, ...t.fields.map((f) => f.json)] : []; }).join(" ");
+    const routes = c.routes.filter((r) => apiGroup(r) === group && matches(r.path, c.fnById.get(r.handler)?.docs, c.fnById.get(r.handler)?.key, fieldText(r))).sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+    const rows = routes.map((r) => {
+      const fn = c.fnById.get(r.handler);
+      const key = `route:${r.id}`;
+      return row(key, [
+        h("div", { style: "min-width:0" },
+          h("div", {}, h("span", { class: "method" }, r.method), h("span", { class: "name mono" }, r.path)),
+          (() => {
+            const req = [...(r.apiRefs?.query || []), ...(r.apiRefs?.body || [])].flatMap((id) => fieldNames(id));
+            const res = r.api?.responseNote ? [] : (r.apiRefs?.response || []).flatMap((id) => fieldNames(id));
+            const bits = [req.length ? `请求 ${preview(req)}` : "", res.length ? `响应 ${preview(res)}` : r.api?.response && !r.api.responseNote ? `响应 ${r.api.response}` : ""].filter(Boolean);
+            return bits.length ? h("div", { class: "mono fields" }, bits.join("   ·   ")) : null;
+          })(),
+          fn?.docs ? h("div", { class: "doc" }, firstPara(fn.docs)) : fn ? null : h("div", { class: "doc", style: "color:var(--muted)" }, "（内联闭包）")),
+        h("span", { class: "acts" }, askButton(key, r.module, "api"), graphButton(key)),
+      ], () => [
+        fn ? h("div", {}, h("span", { class: "k" }, "处理函数："), fnRef(fn.id)) : null,
+        fn ? h("div", { class: "mono" }, fn.signature) : null,
+        h("div", {}, h("span", { class: "k" }, "注册位置："), h("span", { class: "mono" }, `${r.file}:${r.line}`)),
+        h("div", {}, h("span", { class: "k" }, "前端调用："), r.frontend.length ? r.frontend.map((x) => `${x.fn || ""}（${x.file.split("/").pop()}）`).join("、") : "未发现"),
+        fn?.callees.length ? h("div", {}, h("span", { class: "k" }, "往下调用："), joinNodes(fn.callees.map(fnRef))) : null,
+        ...apiParts(r, key),
+      ]);
+    });
+    return [h("div", { class: "file-h" }, `${routes.length} 条路由`), ...(rows.length ? rows : [h("div", { class: "empty" }, "没有匹配的路由")])];
+  }
+  if (layer === "structs") {
+    const types = c.types.filter((t) => structGroup(t.file) === group && matches(t.name, t.docs, t.fields.map((f) => `${f.json} ${f.rust}`).join(" "), t.variants.map((v) => v.json).join(" "))).sort((a, b) => a.name.localeCompare(b.name));
+    const usedBy = new Map();
+    for (const r of c.routes) for (const id of r.api?.types || []) usedBy.set(id, [...(usedBy.get(id) || []), r]);
+    const rows = types.map((t) => {
+      const key = `type:${t.id}`;
+      const uses = usedBy.get(t.id) || [];
+      const names = t.fields.length ? fieldNames(t.id) : t.variants.map((v) => v.json);
+      return row(key, [
+        h("div", { style: "min-width:0" },
+          h("div", {}, h("span", { class: "name mono" }, t.name + (t.generics || "")),
+            h("span", { class: "tag", style: "margin-left:6px" }, t.kind === "enum" ? `枚举 · ${t.variants.length} 个取值` : `${t.fields.length} 个字段`),
+            uses.length ? h("span", { class: "tag", style: "margin-left:6px" }, `用于 ${uses.length} 个接口`) : null),
+          names.length ? h("div", { class: "mono fields" }, preview(names, 12)) : null,
+          t.docs ? h("div", { class: "doc" }, firstPara(t.docs)) : null),
+        h("span", { class: "acts" }, askButton(key, t.module, "api"), graphButton(key)),
+      ], () => [
+        h("div", {}, h("span", { class: "k" }, "位置："), h("span", { class: "mono" }, `${t.file}:${t.line}`)),
+        uses.length ? h("div", {}, h("span", { class: "k" }, "用于："), joinNodes(uses.map((r) => h("span", { class: "link mono", onclick: () => goTo(`route:${r.id}`) }, r.id)))) : null,
+        shapeBar(() => `type ${t.name} = ${tsOfType(t)};`),
+        state.shapeMode === "ts" ? h("pre", { class: "ts mono" }, `type ${t.name} = ${tsOfType(t)};`) : typeBlock(t.id, key),
+      ]);
+    });
+    return [h("div", { class: "file-h" }, `${types.length} 个结构体与枚举`), ...(rows.length ? rows : [h("div", { class: "empty" }, "没有匹配的结构体")])];
+  }
+  if (layer === "backend") {
+    const fns = backendFns().filter((f) => backendGroups(f).includes(group) && matches(f.key, f.docs));
+    const note = group === NO_BACKEND ? "这些函数不在任何后端服务的入口调用链上（测试辅助、未接入或经动态方式调用）。" : `从 ${group} 入口沿调用和路由能到达的业务函数；被多个后端共用的函数在每个后端下都会出现。`;
+    return [h("div", { class: "empty", style: "padding:0 0 4px" }, note), ...byFile(fns)];
+  }
+  if (layer === "database") {
+    const tables = c.tables.filter((t) => t.schema === group && matches(t.key, t.comment, t.columns.map((x) => x.name).join(" ")));
+    const users = (key) => c.functions.filter((f) => f.tables.some((t) => t.name === key));
+    const rows = tables.map((t) => {
+      const key = `table:${t.key}`;
+      return row(key, [
+        h("div", { style: "min-width:0" }, h("div", {}, h("span", { class: "name mono" }, t.key), h("span", { class: "tag", style: "margin-left:6px" }, t.kind === "view" ? "视图" : `${t.columns.length} 个字段`)), h("div", { class: "doc" }, t.comment || "")),
+        h("span", { class: "acts" }, askButton(key, t.module, "database"), graphButton(key)),
+      ], () => [
+        t.columns.length ? h("table", { style: "width:100%;border-collapse:collapse;font-size:12px" }, t.columns.map((col) => h("tr", {},
+          h("td", { class: "mono", style: "padding:2px 8px 2px 0;vertical-align:top" }, col.name),
+          h("td", { class: "mono", style: "padding:2px 8px 2px 0;vertical-align:top;color:var(--muted)" }, col.type),
+          h("td", { style: "padding:2px 8px 2px 0;vertical-align:top" }, [col.pk ? "主键" : "", col.notNull && !col.pk ? "非空" : "", col.ref ? `→ ${col.ref}` : ""].filter(Boolean).join("，")),
+          h("td", { style: "padding:2px 0;vertical-align:top" }, col.comment)))) : null,
+        h("div", {}, h("span", { class: "k" }, "写入："), joinNodes(users(t.key).filter((f) => f.tables.find((x) => x.name === t.key).write).map((f) => fnRef(f.id))), users(t.key).some((f) => f.tables.find((x) => x.name === t.key).write) ? "" : "未发现"),
+        h("div", {}, h("span", { class: "k" }, "读取："), joinNodes(users(t.key).filter((f) => !f.tables.find((x) => x.name === t.key).write).map((f) => fnRef(f.id)))),
+        h("div", {}, h("span", { class: "k" }, "创建于："), h("span", { class: "mono" }, t.createdIn.split("/").pop()), `，共涉及 ${t.migrations.length} 个迁移`),
+      ]);
+    });
+    const repo = repoFns().filter((f) => f.tables.some((t) => tableSchema(t.name) === group) && matches(f.key, f.docs));
+    return [h("div", { class: "file-h" }, `${tables.length} 张表`), ...(rows.length ? rows : [h("div", { class: "empty" }, "没有匹配的表")]), h("div", { class: "file-h" }, `访问这些表的数据访问函数（${repo.length}）`), ...byFile(repo)];
+  }
+  const files = c.frontendFiles.filter((f) => frontGroup(f.file) === group && matches(f.file, f.clientFns.map((x) => x.name).join(" ")));
+  const pages = c.frontendRoutes.filter((r) => frontGroup(r.target || r.file) === group);
+  return [
+    pages.length ? h("div", { class: "file-h" }, `页面路由（${pages.length}）`) : null,
+    ...pages.map((p) => h("div", { class: "row" }, h("div", { class: "head" }, h("span", { class: "name mono" }, p.path), h("span", { class: "mono", style: "color:var(--muted)" }, `→ ${p.component}`),
+      p.target ? h("span", { class: "acts" }, graphButton(`front:${p.target}`)) : null))),
+    h("div", { class: "file-h" }, `文件（${files.length}）`),
+    ...files.map((f) => {
+      const key = `front:${f.file}`;
+      return row(key, [
+        h("div", { style: "min-width:0" }, h("div", { class: "name mono" }, f.file.replace(/^frontend\//, "")), h("div", { class: "doc", style: "color:var(--muted)" }, f.routes.length ? `用到 ${f.routes.length} 个接口` : "未发现接口调用")),
+        h("span", { class: "acts" }, askButton(key, f.module, "frontend"), graphButton(key)),
+      ], () => [
+        f.clientFns.length ? h("div", {}, h("span", { class: "k" }, "发请求的函数："), f.clientFns.map((x) => x.name + (x.docs ? `（${x.docs}）` : "")).join("、")) : null,
+        f.routes.length ? h("div", {}, h("span", { class: "k" }, "接口："), joinNodes(f.routes.map((id) => h("span", { class: "link mono", onclick: () => goTo(`route:${id}`) }, id)))) : null,
+      ]);
+    }),
+  ];
+}
+function renderMap() {
+  const c = state.code;
+  if (!c) return [h("div", { class: "empty" }, "代码地图加载中…")];
+  const layer = state.mapLayer;
+  const group = currentGroup(layer);
+  const heading = { frontend: "前端（按应用／页面目录）", api: "API（按路径首段）", backend: "后端（按服务）", structs: "结构体（按声明文件）", database: "数据库（按 schema）" }[layer];
+  const mods = h("div", { class: "mods" }, h("div", { class: "grp-h" }, heading), groupsOf(layer).map(([g, n]) => h("button", { class: g === group ? "on" : "", onclick: () => { state.mapGroup[layer] = g; state.highlight = null; render(); } },
+    h("span", { class: "mono" }, g), h("span", { class: "c" }, n))));
+  const tabs = h("div", { class: "tabs layer-tabs" }, Object.entries(MAP_TABS).map(([k, v]) => h("button", { class: layer === k ? "on" : "", onclick: () => { state.mapLayer = k; state.highlight = null; render(); } }, v)));
+  const info = h("div", { class: "empty", style: "padding:0 0 8px" }, layer === "structs" ? "这个文件声明的请求、响应及嵌套结构体。搜索框可按结构体名或字段名筛选。" : "点一行展开详情；点「提要求」写一条针对它的规则（归入它所属的规则模块）。搜索框也能按字段名找接口。");
+  return [h("div", { class: "map" }, mods, h("div", { class: "panel" }, tabs, info, mapContent(group, layer)))];
+}
+
+// ---------- relationship graph ----------
+// Rust type → a field tree for display, resolving Option/Vec/maps, generics, flatten and enums
+// (the same rules as the TS view), recursively down to the leaves.
+function shapeOf(n, refs, seen, bind) {
+  if (!n) return { label: "unknown" };
+  if (n.tuple) return { label: n.tuple.length ? `[${n.tuple.map((x) => shapeOf(x, refs, seen, bind).label).join(", ")}]` : "null" };
+  if (n.array) { const s = shapeOf(n.array, refs, seen, bind); return { ...s, label: `${tsWrap(s.label)}[]` }; }
+  if (bind && bind[n.name]) return shapeOf(bind[n.name].node, bind[n.name].refs, seen, bind[n.name].bind);
+  const a = n.args;
+  switch (n.name) {
+    case "Option": { const s = shapeOf(a[0], refs, seen, bind); return { ...s, label: `${s.label} | null` }; }
+    case "Vec": case "VecDeque": case "HashSet": case "BTreeSet": { const s = shapeOf(a[0], refs, seen, bind); return { ...s, label: `${tsWrap(s.label)}[]` }; }
+    case "HashMap": case "BTreeMap": case "IndexMap": { const s = shapeOf(a[1], refs, seen, bind); return { ...s, label: `Record<string, ${s.label}>` }; }
+    case "Box": case "Arc": case "Rc": case "Cow": case "Json": return shapeOf(a[a.length - 1], refs, seen, bind);
+    case "bool": return { label: "boolean" };
+    case "Value": return { label: "unknown（动态 JSON）" };
+  }
+  if (TS_NUM.test(n.name)) return { label: "number" };
+  if (TS_STR.test(n.name)) return { label: "string" };
+  const t = findType(n.name, refs);
+  if (!t) return { label: n.name };
+  if (seen.includes(t.id) || seen.length > 10) return { label: `${t.name}（递归，结构同上层）` };
+  const names = (t.generics || "").replace(/^<|>$/g, "").split(",").map((g) => g.split(":")[0].trim()).filter((g) => g && !g.startsWith("'"));
+  const nextBind = {};
+  names.forEach((g, k) => { if (a[k]) nextBind[g] = { node: a[k], refs, bind }; });
+  return typeShape(t, [...seen, t.id], nextBind);
+}
+function typeShape(t, seen, bind) {
+  if (t.fields.length) {
+    const rows = [];
+    const add = (type) => {
+      for (const f of type.fields) {
+        if (f.notes.some((x) => x.startsWith("展开"))) {
+          const inner = findType(tyParse(f.type).name, f.refs);
+          if (inner && inner.fields.length && !seen.includes(inner.id)) { seen = [...seen, inner.id]; add(inner); continue; }
+        }
+        rows.push({ name: f.json, required: f.required, docs: firstPara(f.docs), shape: shapeOf(tyParse(f.type), f.refs, seen, bind) });
+      }
+    };
+    add(t);
+    return { label: t.name, rows };
+  }
+  if (t.variants.length) {
+    return { label: t.name, variants: t.variants.map((v) => ({ name: v.json, docs: firstPara(v.docs),
+      shape: !v.payload ? null : v.payload.startsWith("{") ? { label: v.payload } : shapeOf(tyParse(v.payload), v.refs, seen, bind) })) };
+  }
+  if (t.alias) return shapeOf(tyParse(t.alias), [], seen, bind);
+  return { label: t.name };
+}
+const hasTree = (s) => s && (s.rows?.length || s.variants?.length);
+function shapeDom(s) {
+  if (s.rows) return h("div", { class: "ft" }, s.rows.map((r) => h("div", { class: "ft-row" },
+    h("span", { class: "mono" }, r.name, r.required ? null : h("span", { style: "color:var(--muted)" }, "?")),
+    h("span", { class: "t mono" }, r.shape.label),
+    r.docs ? h("span", { class: "d" }, r.docs) : null,
+    hasTree(r.shape) ? h("div", { class: "ft-nest" }, shapeDom(r.shape)) : null)));
+  if (s.variants) return h("div", { class: "ft" }, s.variants.map((v) => h("div", { class: "ft-row" },
+    h("span", { class: "mono" }, JSON.stringify(v.name)),
+    h("span", { class: "t mono" }, v.shape ? v.shape.label : "（无内容）"),
+    v.docs ? h("span", { class: "d" }, v.docs) : null,
+    hasTree(v.shape) ? h("div", { class: "ft-nest" }, shapeDom(v.shape)) : null)));
+  return null;
+}
+// Path, query, body and response of a route, each as { label, text, shape }.
+function apiBodies(r) {
+  const a = r.api;
+  if (!a) return [];
+  const part = (label, text, ids) => (text ? [{ label, text, shape: shapeOf(tyParse(text), ids, [], {}) }] : []);
+  return [
+    ...part("路径参数", a.path, r.apiRefs?.path || []),
+    ...part("查询参数", a.query, r.apiRefs?.query || []),
+    ...part(a.bodyKind === "form" ? "请求体（表单）" : "请求体（JSON）", a.body, r.apiRefs?.body || []),
+    ...(a.bodyKind === "multipart" ? [{ label: "请求体", text: "multipart/form-data", shape: null }] : []),
+    ...(a.response && !a.responseNote ? part("响应（JSON）", a.response, r.apiRefs?.response || []) : []),
+    ...(a.responseNote ? [{ label: "响应", text: a.responseNote, shape: null }] : []),
+  ];
+}
+let popover = null, popoverAt = 0;
+function closePopover() { popover?.remove(); popover = null; }
+function openPopover(anchor, key, title, content) {
+  closePopover();
+  popoverAt = performance.now();
+  popover = h("div", { class: "popover", "data-key": key }, h("div", { class: "mm-part-h", style: "margin-bottom:6px" }, title), content);
+  document.body.append(popover);
+  const r = anchor.getBoundingClientRect();
+  const w = popover.offsetWidth, ht = popover.offsetHeight;
+  popover.style.left = `${Math.max(12, Math.min(r.left, innerWidth - w - 12))}px`;
+  popover.style.top = `${r.bottom + 6 + ht > innerHeight - 12 ? Math.max(12, r.top - ht - 6) : r.bottom + 6}px`;
+}
+document.addEventListener("mousedown", (e) => { if (popover && !popover.contains(e.target) && !e.target.closest(".pop-chip")) closePopover(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePopover(); });
+// It is positioned against the viewport, so scrolling anything but the popover itself closes it
+// (except the scroll that brings a clicked chip into view).
+window.addEventListener("scroll", (e) => { if (popover && !popover.contains(e.target) && performance.now() - popoverAt > 300) closePopover(); }, true);
+function bodyParts(r) {
+  return apiBodies(r).map((p) => {
+    const count = p.shape?.rows?.length ?? p.shape?.variants?.length;
+    if (state.graph.bodies === "popover" && hasTree(p.shape)) {
+      const key = `${r.id}|${p.label}`;
+      const toggle = (e) => {
+        e.stopPropagation();
+        if (popover?.dataset.key === key) closePopover();
+        else openPopover(e.currentTarget, key, [p.label, "：", h("span", { class: "mono" }, p.text)], shapeDom(p.shape));
+      };
+      return h("button", { class: "small pop-chip", onclick: toggle }, `${p.label} · ${count} 项`);
+    }
+    return h("div", { class: "mm-part" }, h("div", { class: "mm-part-h" }, p.label, "：", h("span", { class: "mono" }, p.text)), hasTree(p.shape) ? shapeDom(p.shape) : null);
+  });
+}
+function mmNode(card, kids) {
+  return h("div", { class: "mm-node" }, card, kids.length ? h("div", { class: "mm-kids" }, kids) : null);
+}
+// Whether a function (or anything it calls) touches a table.
+function reachesDb(id, memo, stack = new Set()) {
+  if (memo.has(id)) return memo.get(id);
+  const f = state.code.fnById.get(id);
+  if (!f || stack.has(id)) return false;
+  stack.add(id);
+  const hit = f.tables.length > 0 || f.callees.some((c) => reachesDb(c, memo, stack));
+  stack.delete(id);
+  memo.set(id, hit);
+  return hit;
+}
+function fnNode(id, shown, memo, depth) {
+  const f = state.code.fnById.get(id);
+  if (!f) return null;
+  const again = shown.has(id);
+  shown.add(id);
+  const card = h("div", { class: `mm-card fn ${again ? "dim" : ""}` },
+    h("div", {}, h("span", { class: "link mono", onclick: () => goTo(`fn:${id}`) }, f.key), again ? h("span", { class: "sub" }, "（同上，已展开）") : null),
+    f.docs ? h("div", { class: "sub" }, firstPara(f.docs)) : null);
+  if (again) return mmNode(card, []);
+  const callees = depth >= 7 ? [] : f.callees.filter((c) => state.graph.allFns || reachesDb(c, memo));
+  const kids = [
+    ...callees.map((c) => fnNode(c, shown, memo, depth + 1)).filter(Boolean),
+    ...f.tables.map((t) => {
+      const tb = state.code.tableByKey.get(t.name);
+      return mmNode(h("div", { class: `mm-card table ${t.write ? "write" : ""}` },
+        h("div", {}, h("span", { class: "link mono", onclick: () => goTo(`table:${t.name}`) }, t.name), h("span", { class: "sub" }, t.write ? "　写" : "　读")),
+        tb?.comment ? h("div", { class: "sub" }, firstPara(tb.comment)) : null), []);
+    }),
+  ];
+  return mmNode(card, kids);
+}
+// Routes a page reaches: its own requests and those of the files it imports (same group unless `shared`).
+function pageRoutes(file) {
+  const c = state.code;
+  const byFile = c.frontByFile;
+  const group = frontGroup(file);
+  const seen = new Set([file]);
+  const queue = [file];
+  const from = new Map();
+  while (queue.length) {
+    const cur = byFile.get(queue.shift());
+    if (!cur) continue;
+    for (const id of cur.calls) from.set(id, [...(from.get(id) || []), cur.file]);
+    for (const next of cur.imports) {
+      if (seen.has(next) || (!state.graph.shared && frontGroup(next) !== group)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return [...from].map(([id, files]) => ({ route: c.routeById.get(id), files })).filter((x) => x.route)
+    .sort((a, b) => a.route.path.localeCompare(b.route.path) || a.route.method.localeCompare(b.route.method));
+}
+function graphRoots(group) {
+  const c = state.code;
+  // One root per page component; redirects and unresolved elements have no target file.
+  const pages = new Map();
+  for (const r of c.frontendRoutes) {
+    if (!r.target || frontGroup(r.target) !== group) continue;
+    const page = pages.get(r.target);
+    if (page) page.paths.push(r.path);
+    else pages.set(r.target, { id: `page:${r.target}`, label: r.component, paths: [r.path], file: r.target });
+  }
+  if (pages.size) return [...pages.values()].map((p) => ({ ...p, sub: p.paths.join("　") })).sort((a, b) => a.label.localeCompare(b.label));
+  // No routed pages in this group (shared components, hooks): start from each file that makes requests.
+  return c.frontendFiles.filter((f) => frontGroup(f.file) === group && f.calls.length)
+    .map((f) => ({ id: `file:${f.file}`, label: f.file.split("/").pop(), sub: f.file, file: f.file }));
+}
+function apiNode(r, files, memo) {
+  const fn = state.code.fnById.get(r.handler);
+  const card = h("div", { class: "mm-card api" },
+    h("div", {}, h("span", { class: "method" }, r.method), h("span", { class: "link mono", onclick: () => goTo(`route:${r.id}`) }, r.path)),
+    fn?.docs ? h("div", { class: "sub" }, firstPara(fn.docs)) : null,
+    files.length ? h("div", { class: "sub" }, "发起：", joinNodes([...new Set(files)].map((f) => h("span", { class: "link", onclick: () => openGraph(`front:${f}`) }, f.split("/").pop())))) : null,
+    bodyParts(r));
+  return mmNode(card, r.handler ? [fnNode(r.handler, new Set(), memo, 0)].filter(Boolean) : []);
+}
+function pageTree(root) {
+  const c = state.code;
+  const memo = new Map();
+  const routes = pageRoutes(root.file).filter(({ route }) => matches(route.path, c.fnById.get(route.handler)?.key, c.fnById.get(route.handler)?.docs));
+  const apiNodes = routes.map(({ route, files }) => apiNode(route, files, memo));
+  return h("div", { class: "mm" }, mmNode(
+    h("div", { class: "mm-card page" }, h("div", { class: "mono", style: "font-weight:600" }, root.label), root.sub ? h("div", { class: "sub" }, root.sub) : null, h("div", { class: "sub mono" }, root.file.replace(/^frontend\//, "")), h("div", { class: "sub" }, `${routes.length} 个接口`)),
+    apiNodes.length ? apiNodes : [mmNode(h("div", { class: "mm-card" }, "没有发现接口调用"), [])]));
+}
+// Who uses a function, growing towards the routes: callers, and the routes it handles as leaves.
+function usersNode(id, shown, depth, table) {
+  const c = state.code;
+  const f = c.fnById.get(id);
+  if (!f) return null;
+  const again = shown.has(id);
+  shown.add(id);
+  const use = table ? f.tables.find((t) => t.name === table) : null;
+  const card = h("div", { class: `mm-card fn ${again ? "dim" : ""}` },
+    h("div", {}, h("span", { class: "link mono", onclick: () => goTo(`fn:${id}`) }, f.key), use ? h("span", { class: "sub" }, use.write ? "　写" : "　读") : null, again ? h("span", { class: "sub" }, "（同上，已展开）") : null),
+    f.docs ? h("div", { class: "sub" }, firstPara(f.docs)) : null);
+  if (again) return mmNode(card, []);
+  const routes = c.routes.filter((r) => r.handler === id).map((r) => mmNode(h("div", { class: "mm-card api" },
+    h("div", {}, h("span", { class: "method" }, r.method), h("span", { class: "link mono", onclick: () => openGraph(`route:${r.id}`) }, r.path)),
+    r.frontend.length ? h("div", { class: "sub" }, "前端：", joinNodes([...new Set(r.frontend.map((x) => x.file))].map((file) => h("span", { class: "link", onclick: () => openGraph(`front:${file}`) }, file.split("/").pop())))) : null), []));
+  const callers = depth >= 7 ? [] : f.callers.map((x) => usersNode(x, shown, depth + 1)).filter(Boolean);
+  return mmNode(card, [...routes, ...callers]);
+}
+// Graph rooted at a code-map item ("front:", "route:", "fn:", "type:" or "table:" key).
+function focusGraph(key) {
+  const c = state.code;
+  const at = key.indexOf(":");
+  const kind = key.slice(0, at), id = key.slice(at + 1);
+  const memo = new Map();
+  const up = (label, nodes) => (nodes.length ? h("div", { class: "focus-up" }, label, joinNodes(nodes)) : null);
+  const graphLink = (k, text) => h("span", { class: "link mono", onclick: () => openGraph(k) }, text);
+  if (kind === "front") {
+    const roots = graphRoots(frontGroup(id));
+    const root = roots.find((r) => r.file === id) || { label: id.split("/").pop(), sub: "", file: id };
+    return { label: root.label, info: "前端文件 → 它及同目录下被它引用的文件发出的请求 → 处理函数及其调用链 → 读写的表。", tree: pageTree(root) };
+  }
+  if (kind === "route") {
+    const r = c.routeById.get(id);
+    if (!r) return null;
+    const files = [...new Set(r.frontend.map((x) => x.file))];
+    return { label: `${r.method} ${r.path}`, info: "接口（含请求与响应数据体） → 处理函数及其调用链 → 读写的表。",
+      up: up("前端调用：", files.map((f) => graphLink(`front:${f}`, f.split("/").pop()))), tree: h("div", { class: "mm" }, apiNode(r, files, memo)) };
+  }
+  if (kind === "fn") {
+    const f = c.fnById.get(id);
+    if (!f) return null;
+    return { label: f.key, info: "函数 → 它的调用链 → 读写的表。",
+      up: up("上游：", [...c.routes.filter((r) => r.handler === id).map((r) => graphLink(`route:${r.id}`, `${r.method} ${r.path}`)), ...f.callers.map((x) => graphLink(`fn:${x}`, c.fnById.get(x)?.key || x))]),
+      tree: h("div", { class: "mm" }, fnNode(id, new Set(), memo, 0)) };
+  }
+  if (kind === "type") {
+    const t = c.typeById.get(id);
+    if (!t) return null;
+    const routes = c.routes.filter((r) => (r.api?.types || []).includes(id));
+    const shape = typeShape(t, [t.id], {});
+    const card = h("div", { class: "mm-card api" },
+      h("div", {}, h("span", { class: "link mono", style: "font-weight:600", onclick: () => goTo(key) }, t.name + (t.generics || ""))),
+      h("div", { class: "sub mono" }, `${t.file}:${t.line}`),
+      t.docs ? h("div", { class: "sub" }, firstPara(t.docs)) : null,
+      hasTree(shape) ? shapeDom(shape) : null);
+    return { label: t.name, info: "结构体（完整展开） → 用到它的接口 → 处理函数及其调用链 → 读写的表。",
+      tree: h("div", { class: "mm" }, mmNode(card, routes.length ? routes.map((r) => apiNode(r, r.frontend.map((x) => x.file), memo)) : [mmNode(h("div", { class: "mm-card" }, "没有接口直接用到它"), [])])) };
+  }
+  if (kind === "table") {
+    const t = c.tableByKey.get(id);
+    const users = c.functions.filter((f) => f.tables.some((x) => x.name === id));
+    const shown = new Set();
+    const card = h("div", { class: "mm-card table" }, h("div", {}, h("span", { class: "link mono", style: "font-weight:600", onclick: () => goTo(key) }, id)), t?.comment ? h("div", { class: "sub" }, firstPara(t.comment)) : null);
+    return { label: id, info: "表 → 读写它的函数 → 逐级往上的调用者 → 最终的接口与发起请求的前端文件（方向与页面视图相反）。",
+      tree: h("div", { class: "mm" }, mmNode(card, users.length ? users.map((f) => usersNode(f.id, shown, 0, id)).filter(Boolean) : [mmNode(h("div", { class: "mm-card" }, "没有发现访问它的函数"), [])])) };
+  }
+  return null;
+}
+function openGraph(key) {
+  closePopover();
+  state.view = "graph";
+  state.highlight = null;
+  state.graph.focus = key;
+  if (key.startsWith("front:")) {
+    // A routed page opens as the regular page view of its group.
+    const file = key.slice(6);
+    const root = graphRoots(frontGroup(file)).find((r) => r.file === file && r.id.startsWith("page:"));
+    if (root) { state.graph.group = frontGroup(file); state.graph.page = root.id; state.graph.focus = null; }
+  }
+  render();
+  window.scrollTo(0, 0);
+}
+function renderGraph() {
+  const c = state.code;
+  if (!c) return [h("div", { class: "empty" }, "代码地图加载中…")];
+  c.frontByFile ??= new Map(c.frontendFiles.map((f) => [f.file, f]));
+  const groups = groupsOf("frontend").filter(([g]) => graphRoots(g).length);
+  if (!groups.some(([g]) => g === state.graph.group)) state.graph.group = ([...groups].sort((a, b) => graphRoots(b[0]).length - graphRoots(a[0]).length)[0] || [""])[0];
+  const group = state.graph.group;
+  const roots = graphRoots(group);
+  if (!roots.some((r) => r.id === state.graph.page)) state.graph.page = roots[0]?.id || "";
+  const root = roots.find((r) => r.id === state.graph.page);
+  const set = (k, v, store) => { state.graph[k] = v; if (store) remember(store, typeof v === "boolean" ? (v ? "1" : "0") : v); closePopover(); render(); };
+
+  const focus = state.graph.focus ? focusGraph(state.graph.focus) : null;
+  const side = h("div", { class: "mods" }, h("div", { class: "grp-h" }, "前端（按应用／页面目录）"), groups.map(([g]) => h("button", { class: g === group && !focus ? "on" : "", onclick: () => { state.graph.focus = null; set("group", g); } },
+    h("span", { class: "mono" }, g), h("span", { class: "c" }, graphRoots(g).length))));
+  const chips = focus ? h("div", { class: "chips" }, h("span", { class: "chip mono on" }, focus.label), h("button", { class: "chip", onclick: () => set("focus", null) }, "返回页面视图"))
+    : h("div", { class: "chips" }, roots.map((r) => h("button", { class: `chip mono ${r.id === state.graph.page ? "on" : ""}`, title: r.sub, onclick: () => set("page", r.id) }, r.label)));
+  const bar = h("div", { class: "graph-bar" },
+    h("span", { class: "tabs" },
+      h("button", { class: state.graph.bodies === "inline" ? "on" : "", onclick: () => set("bodies", "inline", "graphBodies") }, "数据体全部展开"),
+      h("button", { class: state.graph.bodies === "popover" ? "on" : "", onclick: () => set("bodies", "popover", "graphBodies") }, "点击弹出数据体")),
+    h("label", {}, h("input", { type: "checkbox", checked: state.graph.shared || null, onchange: (e) => set("shared", e.target.checked, "graphShared") }), "包含其他目录组件发出的请求"),
+    h("label", {}, h("input", { type: "checkbox", checked: state.graph.allFns || null, onchange: (e) => set("allFns", e.target.checked, "graphAllFns") }), "显示不访问数据库的函数"));
+
+  const tree = focus ? focus.tree : root ? pageTree(root) : h("div", { class: "empty" }, "这个分组没有页面");
+  const info = h("div", { class: "empty", style: "padding:0 0 8px" }, focus ? focus.info : "页面 → 接口（含请求与响应数据体） → 处理函数及其调用链 → 读写的表。",
+    state.graph.focus?.startsWith("table:") ? "" : "默认只沿通向数据库的调用展开；同一接口下重复出现的函数只展开一次。", "点名称跳到代码地图。");
+  return [h("div", { class: "map" }, side, h("div", { class: "panel" }, chips, bar, info, focus?.up, tree))];
+}
+
+// ---------- shell ----------
+function render() {
+  document.querySelectorAll(".tabs button[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === state.view));
+  document.getElementById("module").style.display = state.view === "board" ? "" : "none";
+  const main = document.getElementById("main");
+  const y = window.scrollY;
+  const newBtn = document.getElementById("new-rule");
+  newBtn.textContent = state.view === "features" ? "提新功能" : "新建规则";
+  main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : renderMap()));
+  window.scrollTo(0, y);
+}
+document.getElementById("repo-name").textContent = CONFIG.name;
+document.title = `VibeDoc · ${CONFIG.name}`;
+if (!CONFIG.codemap) for (const v of ["map", "graph"]) document.querySelector(`.tabs button[data-view="${v}"]`).remove();
+document.querySelectorAll(".tabs button[data-view]").forEach((b) => b.addEventListener("click", () => { state.view = b.dataset.view; state.highlight = null; render(); window.scrollTo(0, 0); }));
+document.getElementById("module").addEventListener("change", (e) => { state.module = e.target.value; render(); });
+let searchTimer;
+document.getElementById("search").addEventListener("input", (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value.trim(); render(); }, 150); });
+document.getElementById("new-rule").addEventListener("click", () => (state.view === "features" ? newFeature() : newRule()));
+document.getElementById("stop").addEventListener("click", async () => {
+  if (!confirm("停止 VibeDoc 服务？")) return;
+  try { await api("POST", "/api/shutdown", {}); } catch {}
+  document.getElementById("main").replaceChildren(h("div", { class: "empty", style: "padding:40px;text-align:center;font-size:14px" }, "服务已停止，可以关闭这个窗口。下次从 VibeDoc App 或 `vibedoc serve` 启动。"));
+  document.getElementById("live").textContent = "已停止";
+  document.getElementById("live").className = "live";
+});
+
+function connect() {
+  const live = document.getElementById("live");
+  const es = new EventSource("/api/events");
+  es.onopen = () => { live.textContent = "实时同步"; live.className = "live ok"; };
+  es.onerror = () => { if (live.textContent !== "已停止") { live.textContent = "连接断开，重连中…"; live.className = "live"; } };
+  es.addEventListener("rules", async () => { await loadRules(); render(); });
+  es.addEventListener("features", async () => {
+    await loadFeatures();
+    // Re-rendering would move the editor and drop the caret; a stale save is refused by version instead.
+    const ed = state.feat.edit;
+    if (ed && state.view === "features") {
+      if (state.features.modules.find((m) => m.module === ed.module)?.version !== ed.version) toast("这篇文档刚被别处改过，保存时会提示冲突");
+      return;
+    }
+    render();
+  });
+  es.addEventListener("code", async () => { await loadCode(); render(); toast("代码有变化，地图已更新"); });
+}
+(async () => {
+  await Promise.all([loadRules(), loadFeatures(), loadCode()]);
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>

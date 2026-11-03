@@ -1,0 +1,14 @@
+{
+  "name": "vibedoc",
+  "private": true,
+  "version": "0.1.0",
+  "description": "本地规则看板、功能文档、代码地图与关系图",
+  "type": "module",
+  "bin": { "vibedoc": "bin/vibedoc" },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "serve": "node vibedoc.ts serve"
+  }
+}

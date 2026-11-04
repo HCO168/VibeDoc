@@ -38,7 +38,7 @@ header h1 { font-size: 16px; margin: 0 8px 0 0; }
 .tabs button { border: 0; background: transparent; }
 .tabs button.on { background: var(--panel); box-shadow: 0 0 0 1px var(--border); }
 .spacer { flex: 1; }
-.repo-name { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.project-select { font-weight: 600; max-width: 220px; }
 .live { font-size: 12px; color: var(--muted); }
 .live.ok::before { content: "●"; color: var(--done); margin-right: 4px; }
 main { padding: 14px 16px 40px; }
@@ -73,6 +73,27 @@ main { padding: 14px 16px 40px; }
 .doc ul, .doc ol { margin: 0 0 8px; padding-left: 22px; }
 .doc code { background: var(--panel-2); border-radius: 4px; padding: 0 4px; }
 .doc .st { border: 0; cursor: pointer; font-weight: 400; }
+.md-table { border-collapse: collapse; margin: 4px 0 10px; font-size: 13px; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.md-table th { background: var(--panel-2); font-weight: 600; }
+.q-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.q-card.answered { border-color: var(--done); }
+.q-card .q-title { font-weight: 600; margin-bottom: 4px; }
+.q-card .q-answer { background: var(--done-bg); border-radius: 6px; padding: 4px 8px; margin: 6px 0; font-size: 13px; }
+.q-card textarea, .manage-form textarea { min-height: 70px; }
+.cl-row { padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.cl-row:hover { background: var(--accent-bg); }
+.cl-row .meta { color: var(--muted); font-size: 11px; }
+.cl-day { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.cl-body { margin: 6px 0 10px; padding: 8px 12px; background: var(--panel-2); border-radius: 8px; }
+.sketch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.sketch-grid a { display: block; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; color: inherit; text-decoration: none; }
+.sketch-grid img { width: 100%; height: 140px; object-fit: contain; background: var(--panel-2); display: block; }
+.sketch-grid .cap { font-size: 11px; padding: 4px 6px; color: var(--muted); word-break: break-all; }
+.file-list .f { padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.file-list .f.on, .file-list .f:hover { background: var(--accent-bg); }
+.manage-form { display: grid; gap: 6px; margin: 8px 0 14px; max-width: 760px; }
+.warn-box { border: 1px solid var(--modified); background: var(--modified-bg); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
 .doc-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .doc-editor { width: 100%; min-height: 60vh; resize: vertical; line-height: 1.7; font-size: 13px; padding: 12px 14px; tab-size: 2; }
 .feat-link { display: flex; gap: 8px; align-items: baseline; padding: 7px 4px; border-bottom: 1px solid var(--border); cursor: pointer; flex-wrap: wrap; }
@@ -188,8 +209,9 @@ pre.ts { background: var(--panel); border: 1px solid var(--border); border-radiu
 </head>
 <body>
 <header>
-  <h1>VibeDoc <span id="repo-name" class="repo-name"></span></h1>
-  <div class="tabs"><button data-view="board" class="on">规则看板</button><button data-view="map">代码地图</button><button data-view="graph">关系图</button><button data-view="features">功能文档</button></div>
+  <h1>VibeDoc</h1>
+  <select id="project" class="project-select" title="切换项目"></select>
+  <div class="tabs"><button data-view="board" class="on">规则看板</button><button data-view="map">代码地图</button><button data-view="graph">关系图</button><button data-view="features">功能文档</button><button data-view="manage">项目管理</button></div>
   <select id="module"><option value="">全部模块</option></select>
   <input id="search" type="search" placeholder="搜索" style="width:200px">
   <span class="spacer"></span>
@@ -200,8 +222,17 @@ pre.ts { background: var(--panel); border: 1px solid var(--border); border-radiu
 <main id="main"></main>
 <script>
 const TOKEN = "__BOARD_TOKEN__";
-// Repository settings from vibedoc.config.json (name, document directories, whether the code map is on).
-const CONFIG = "__BOARD_CONFIG__";
+// The selected project (vibedoc.config.json values from /api/projects); every data request goes to /api/p/<id>.
+let PROJECTS = [];
+let PROJECT = "";
+let CONFIG = { name: "", rulesDir: "", featuresDir: "", tablesDir: "", migrationsDir: null, codemap: false, docs: {}, agents: [] };
+const P = (path) => `/api/p/${PROJECT}${path}`;
+const getJson = async (path) => {
+  const res = await fetch(P(path));
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `请求失败（${res.status}）`);
+  return json;
+};
 const LAYERS = { frontend: "前端", api: "API", backend: "后端", database: "数据库" };
 const MAP_TABS = { ...LAYERS, structs: "结构体" };
 const COLUMNS = [["new", "新提出"], ["confirm", "待你确认"], ["doing", "进行中"], ["modified", "已修改"], ["done", "已实现"]];
@@ -222,6 +253,9 @@ const state = {
   // Table requests (tablesDir), each with its parsed spec and SQL draft from the server.
   tables: [],
   feat: { module: saved("featModule", ""), status: "" },
+  // Project documents (docs overview from the server) and the 项目管理 view's selection.
+  docs: null,
+  manage: { section: saved("manageSection", "questions"), file: null, text: "", changelogs: null, open: new Set() },
   graph: { group: "", page: "", focus: null, bodies: saved("graphBodies", "inline"), shared: saved("graphShared", "0") === "1", allFns: saved("graphAllFns", "0") === "1" },
 };
 
@@ -242,6 +276,8 @@ const toast = (msg) => {
   setTimeout(() => t.remove(), 2200);
 };
 async function api(method, path, data) {
+  // Per-project calls are written as "/api/..." and sent to the selected project.
+  if (path.startsWith("/api/") && path !== "/api/shutdown") path = P(path.slice(4));
   const res = await fetch(path, { method, headers: { "Content-Type": "application/json", "X-Board-Token": TOKEN }, body: data ? JSON.stringify(data) : undefined });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `请求失败（${res.status}）`);
@@ -253,16 +289,16 @@ const modTitle = (id) => state.code?.modules.find((m) => m.id === id)?.title || 
 
 // ---------- data ----------
 async function loadRules() {
-  state.rules = (await (await fetch("/api/rules")).json()).items;
+  state.rules = (await getJson("/rules")).items;
 }
 async function loadFeatures() {
-  state.features = await (await fetch("/api/features")).json();
+  state.features = await getJson("/features");
 }
 async function loadTables() {
-  state.tables = (await (await fetch("/api/tables")).json()).items;
+  state.tables = (await getJson("/tables")).items;
 }
 async function loadCode() {
-  const data = await (await fetch("/api/codemap")).json();
+  const data = await getJson("/codemap");
   // Without a code map the server sends only the module list.
   for (const k of ["functions", "routes", "tables", "types", "frontendFiles", "frontendRoutes", "backends"]) data[k] ??= [];
   data.fnById = new Map(data.functions.map((f) => [f.id, f]));
@@ -275,6 +311,9 @@ async function loadCode() {
   const cur = sel.value;
   sel.replaceChildren(h("option", { value: "" }, "全部模块"), ...data.modules.map((m) => h("option", { value: m.id }, `${m.title}（${m.id}）`)));
   sel.value = cur;
+}
+async function loadDocs() {
+  state.docs = await getJson("/docs");
 }
 const rulesFor = (target) => state.rules.filter((r) => r.target === target);
 
@@ -487,11 +526,13 @@ function newRule(preset = {}) {
 // Minimal Markdown for the feature document: headings, paragraphs, lists, quotes, code fences, `code`, **bold**.
 function mdInline(text) {
   const out = [];
-  const re = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  const re = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)\s]+\))/g;
   let last = 0, m;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    out.push(m[0].startsWith("`") ? h("code", { class: "mono" }, m[0].slice(1, -1)) : h("strong", {}, m[0].slice(2, -2)));
+    const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(m[0]);
+    out.push(link ? (/^https?:\/\//.test(link[2]) ? h("a", { href: link[2], target: "_blank", rel: "noopener noreferrer" }, link[1]) : h("span", { class: "mono", title: link[2] }, link[1]))
+      : m[0].startsWith("`") ? h("code", { class: "mono" }, m[0].slice(1, -1)) : h("strong", {}, m[0].slice(2, -2)));
     last = m.index + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));
@@ -500,7 +541,7 @@ function mdInline(text) {
 function mdBlocks(text, heading3) {
   const lines = text.split("\n");
   const out = [];
-  const special = /^(#{1,6}\s|>|```|\s*[-*]\s+|\s*\d+\.\s+)/;
+  const special = /^(#{1,6}\s|>|```|\||\s*[-*]\s+|\s*\d+\.\s+)/;
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
@@ -515,6 +556,14 @@ function mdBlocks(text, heading3) {
     const hm = /^(#{1,6})\s+(.*)$/.exec(line);
     if (hm) { out.push(hm[1].length === 3 ? heading3(hm[2]) : h(`h${Math.min(hm[1].length + 1, 6)}`, { class: `doc-h${hm[1].length}` }, mdInline(hm[2]))); i++; continue; }
     const take = (test, strip) => { const buf = []; while (i < lines.length && test.test(lines[i])) buf.push(lines[i++].replace(strip, "")); return buf; };
+    if (/^\|/.test(line)) {
+      const cells = (l) => l.replace(/^\||\|\s*$/g, "").split("|").map((c) => c.trim());
+      const rows = [];
+      while (i < lines.length && /^\|/.test(lines[i])) rows.push(lines[i++]);
+      const body = rows.filter((r) => !/^\|[\s:|-]+\|?\s*$/.test(r));
+      out.push(h("table", { class: "md-table" }, body.map((r, k) => h("tr", {}, cells(r).map((c) => h(k === 0 && rows.length > 1 && /^\|[\s:|-]+\|?\s*$/.test(rows[1]) ? "th" : "td", {}, mdInline(c)))))));
+      continue;
+    }
     if (/^>\s?/.test(line)) { out.push(h("blockquote", {}, mdInline(take(/^>\s?/, /^>\s?/).join("\n")))); continue; }
     if (/^\s*[-*]\s+/.test(line)) { out.push(h("ul", {}, take(/^\s*[-*]\s+/, /^\s*[-*]\s+/).map((t) => h("li", {}, mdInline(t))))); continue; }
     if (/^\s*\d+\.\s+/.test(line)) { out.push(h("ol", {}, take(/^\s*\d+\.\s+/, /^\s*\d+\.\s+/).map((t) => h("li", {}, mdInline(t))))); continue; }
@@ -602,7 +651,7 @@ function renderFeatures() {
   const side = h("div", { class: "mods" }, h("div", { class: "grp-h" }, "模块"), ids.map((id) => {
     const n = items.filter((f) => f.module === id).length;
     const pending = items.filter((f) => f.module === id && ["new", "modified", "confirm"].includes(f.effective)).length;
-    return h("button", { class: `${id === state.feat.module && !state.feat.status ? "on" : ""} ${n ? "" : "dim"}`, title: n ? "" : "还没有功能文档", onclick: () => { state.feat.module = id; state.feat.status = ""; remember("featModule", id); render(); window.scrollTo(0, 0); } },
+    return h("button", { class: `${id === state.feat.module && !state.feat.status ? "on" : ""} ${n ? "" : "dim"}`, title: n ? "" : "还没有功能文档", onclick: () => { state.feat.module = id; state.feat.status = ""; remember(`featModule:${PROJECT}`, id); render(); window.scrollTo(0, 0); } },
       h("span", {}, modTitle(id)), pending ? h("span", { class: "rulecount" }, pending) : null, h("span", { class: "c" }, n || ""));
   }));
   let body;
@@ -867,6 +916,128 @@ function openTable(opts = {}) {
     sql,
   ], "wide");
   setTimeout(() => (item || spec0.name ? comment : spec0.schema ? name : schema).focus(), 30);
+}
+
+// ---------- project documents (项目管理) ----------
+const MANAGE_SECTIONS = [
+  ["questions", "待决问题"], ["todo", "待办"], ["totest", "待验收"], ["goals", "目标记录"], ["changelogs", "变更日志"],
+  ["requests", "需求原话"], ["sketches", "UI 草图"], ["deliverables", "交付说明"], ["index", "文档入口"],
+];
+// Typing into a form in this view: live updates wait so the input is not replaced.
+const manageBusy = () => !!document.activeElement?.closest?.(".manage-panel") && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+const rawUrl = (path) => P(`/docs/raw?path=${encodeURIComponent(path)}`);
+async function openDocFile(path) {
+  state.manage.file = path;
+  state.manage.text = "加载中…";
+  render();
+  try { state.manage.text = (await getJson(`/docs/file?path=${encodeURIComponent(path)}`)).text; } catch (e) { state.manage.text = e.message; }
+  render();
+}
+function fileBrowser(files, emptyText) {
+  const m = state.manage;
+  const list = h("div", { class: "file-list" }, files.length ? files.map((f) => h("div", { class: `f mono ${m.file === f.path ? "on" : ""}`, onclick: () => openDocFile(f.path) }, f.name)) : h("div", { class: "empty" }, emptyText));
+  const viewer = m.file && files.some((f) => f.path === m.file) ? h("div", { class: "doc", style: "margin-top:12px" }, h("div", { class: "fid mono" }, m.file), mdBlocks(m.text, (t) => h("h4", { class: "doc-h3" }, mdInline(t)))) : null;
+  return [list, viewer];
+}
+function renderManage() {
+  const d = state.docs;
+  if (!d) return [h("div", { class: "empty" }, "加载中…")];
+  const m = state.manage;
+  const answered = d.questions.filter((q) => q.answers.length).length;
+  const counts = {
+    questions: d.questions.length, todo: d.todo.reduce((n, s) => n + s.items.length, 0), totest: d.totest.length,
+    requests: d.requests.length, sketches: d.sketches.length, deliverables: d.deliverables.length,
+  };
+  const side = h("div", { class: "mods" }, h("div", { class: "grp-h" }, "项目管理"), MANAGE_SECTIONS.map(([k, name]) => h("button", { class: m.section === k ? "on" : "", onclick: () => { m.section = k; m.file = null; remember("manageSection", k); render(); window.scrollTo(0, 0); } },
+    h("span", {}, name), k === "questions" && counts.questions - answered ? h("span", { class: "rulecount", title: "等你回答" }, counts.questions - answered) : null, h("span", { class: "c" }, counts[k] || ""))));
+  const p = d.paths;
+  const warn = CONFIG.agents?.length ? h("div", { class: "warn-box" }, "AI 规则区块不是最新：", joinNodes(CONFIG.agents.map((f) => h("code", { class: "mono" }, f))), "。在仓库里运行 ", h("code", { class: "mono" }, "vibedoc agents sync"), " 更新。") : null;
+  let body = [];
+  if (m.section === "questions") {
+    body = [
+      h("div", { class: "empty" }, "AI 遇到需要你拍板的问题记在 ", h("code", { class: "mono" }, p.questions), "。直接在下面回答；AI 收到答复后把结论写进行为文档，再删除这一条。"),
+      ...(d.questions.length ? d.questions.map((q) => {
+        const box = h("textarea", { placeholder: "你的决定或补充说明" });
+        const err = h("div", { class: "err" });
+        return h("div", { class: `q-card ${q.answers.length ? "answered" : ""}` },
+          h("div", { class: "q-title" }, `${q.n}. `, mdInline(q.title)),
+          q.body ? h("div", { class: "doc" }, mdBlocks(q.body, (t) => h("h4", {}, t))) : null,
+          q.answers.map((a) => h("div", { class: "q-answer" }, "你的答复：", mdInline(a))),
+          h("div", { class: "manage-form", style: "margin:6px 0 0" }, box, err, h("div", {}, h("button", { class: "primary small", onclick: async () => {
+            try { await api("POST", `/api/docs/questions/${q.n}/answer`, { answer: box.value }); toast("已记录答复，告诉 AI 去处理即可"); } catch (e) { err.textContent = e.message; }
+          } }, q.answers.length ? "补充答复" : "提交答复"))));
+      }) : [h("div", { class: "empty" }, "没有待决问题。")]),
+    ];
+  } else if (m.section === "todo") {
+    const sec = h("select", {}, [["backlog", "Backlog（待开发）"], ["doing", "In Progress（进行中）"], ["testing", "Under Test（测试中）"]].map(([v, t]) => h("option", { value: v }, t)));
+    const item = h("input", { type: "text", placeholder: "一句话写清楚要做什么" });
+    const err = h("div", { class: "err" });
+    body = [
+      h("div", { class: "empty" }, h("code", { class: "mono" }, p.todo), "：产品待办、进行中与测试中。"),
+      h("div", { class: "manage-form" }, h("div", { style: "display:flex;gap:6px" }, sec, item, h("button", { class: "small", onclick: async () => {
+        try { await api("POST", "/api/docs/todo", { section: sec.value, item: item.value }); item.value = ""; toast("已加入待办"); } catch (e) { err.textContent = e.message; }
+      } }, "添加")), err),
+      ...d.todo.flatMap((s) => [h("div", { class: "feat-sec" }, `${s.name}（${s.items.length}）`), s.items.length ? h("ul", { class: "doc" }, s.items.map((i) => h("li", {}, mdInline(i)))) : h("div", { class: "empty" }, "无")]),
+    ];
+  } else if (m.section === "totest") {
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.totest), "：延后的人工验收交接，按功能分文件。"), ...fileBrowser(d.totest, "没有待验收的交接。")];
+  } else if (m.section === "goals" || m.section === "index") {
+    const path = m.section === "goals" ? p.goals : `${p.root}/README.md`;
+    if (m.file !== path) setTimeout(() => openDocFile(path), 0);
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, path), m.section === "goals" ? "：跨多个回合的目标、范围和待定决策。" : "：文档总入口。"),
+      h("div", { class: "doc" }, mdBlocks(m.file === path ? m.text : "", (t) => h("h4", { class: "doc-h3" }, mdInline(t))))];
+  } else if (m.section === "changelogs") {
+    if (!m.changelogs) { m.changelogs = []; getJson("/docs/changelogs").then((r) => { m.changelogs = r.items; render(); }); }
+    const list = m.changelogs.filter((c) => matches(c.slug, c.role, c.title, c.date));
+    const days = [...new Set(list.map((c) => c.date))];
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.changelogs), `：最近 ${m.changelogs.length} 条，点一条展开。上方搜索框可按短名、角色和内容筛选。`),
+      ...days.flatMap((day) => [h("div", { class: "cl-day" }, day), ...list.filter((c) => c.date === day).map((c) => {
+        const open = m.open.has(c.path);
+        return h("div", {}, h("div", { class: "cl-row", onclick: async () => {
+          if (open) { m.open.delete(c.path); return render(); }
+          m.open.add(c.path);
+          if (!c.text) { try { c.text = (await getJson(`/docs/file?path=${encodeURIComponent(c.path)}`)).text; } catch (e) { c.text = e.message; } }
+          render();
+        } }, h("span", { class: "mono" }, `${c.time.slice(0, 2)}:${c.time.slice(2, 4)} `), h("strong", {}, c.slug), " ", h("span", { class: "meta" }, c.role), c.title ? h("div", { class: "meta" }, c.title) : null),
+          open ? h("div", { class: "cl-body doc" }, mdBlocks(c.text || "加载中…", (t) => h("h4", { class: "doc-h3" }, mdInline(t)))) : null);
+      })]),
+      list.length ? null : h("div", { class: "empty" }, "没有变更日志。")];
+  } else if (m.section === "requests") {
+    const name = h("input", { type: "text", placeholder: "文件名，例如 sharing" });
+    const text = h("textarea", { placeholder: "需求原话，口语即可" });
+    const err = h("div", { class: "err" });
+    const current = d.requests.find((f) => f.path === m.file);
+    const edit = h("button", { class: "small", onclick: () => { name.value = current.name.replace(/\.md$/, ""); text.value = m.text; name.focus(); } }, "编辑这份需求");
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.requests), "：你的需求原话，AI 只读。"),
+      h("div", { class: "manage-form" }, name, text, err, h("div", {}, h("button", { class: "primary small", onclick: async () => {
+        try { const r = await api("POST", "/api/docs/requests", { name: name.value, text: text.value }); name.value = ""; text.value = ""; toast(`已保存 ${r.path}`); openDocFile(r.path); } catch (e) { err.textContent = e.message; }
+      } }, "保存需求"), current ? [" ", edit] : null)),
+      ...fileBrowser(d.requests, "还没有需求原话。")];
+  } else if (m.section === "sketches") {
+    const input = h("input", { type: "file", accept: "image/*,.pdf", multiple: true });
+    const err = h("div", { class: "err" });
+    input.addEventListener("change", async () => {
+      for (const file of input.files) {
+        try {
+          const res = await fetch(P(`/docs/sketches?name=${encodeURIComponent(file.name)}`), { method: "POST", headers: { "X-Board-Token": TOKEN }, body: file });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(json.error || `上传失败（${res.status}）`);
+          toast(`已上传 ${json.path}`);
+        } catch (e) { err.textContent = `${file.name}：${e.message}`; }
+      }
+      input.value = "";
+    });
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.sketches), "：UI 手绘草图与截图标注，AI 只读。"),
+      h("div", { class: "manage-form" }, h("label", { class: "empty" }, "上传图片或 PDF：", input), err),
+      d.sketches.length ? h("div", { class: "sketch-grid" }, d.sketches.map((f) => /\.md$/.test(f.name)
+        ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); openDocFile(f.path); } }, h("div", { class: "cap" }, f.name))
+        : h("a", { href: rawUrl(f.path), target: "_blank", rel: "noopener" }, /\.pdf$/i.test(f.name) ? h("div", { class: "cap", style: "height:140px" }, "PDF") : h("img", { src: rawUrl(f.path), alt: f.name, loading: "lazy" }), h("div", { class: "cap" }, f.name))))
+        : h("div", { class: "empty" }, "还没有草图。"),
+      m.file && d.sketches.some((f) => f.path === m.file) ? h("div", { class: "doc", style: "margin-top:12px" }, mdBlocks(m.text, (t) => h("h4", {}, t))) : null];
+  } else if (m.section === "deliverables") {
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.deliverables), "：给人读的交付说明。"), ...fileBrowser(d.deliverables, "还没有交付说明。")];
+  }
+  return [h("div", { class: "map" }, side, h("div", { class: "panel manage-panel" }, warn, ...body))];
 }
 
 // ---------- code map ----------
@@ -1541,12 +1712,13 @@ function render() {
   const y = window.scrollY;
   const newBtn = document.getElementById("new-rule");
   newBtn.textContent = state.view === "features" ? "提新功能" : state.view === "map" && state.mapLayer === "database" ? "新建表" : "新建规则";
-  main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : renderMap()));
+  if (!PROJECT) {
+    main.replaceChildren(h("div", { class: "empty", style: "padding:40px;text-align:center;font-size:14px" }, "还没有项目。在要管理的仓库根目录运行 vibedoc init（或已有配置时运行 vibedoc add），这里会自动出现。"));
+    return;
+  }
+  main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : state.view === "manage" ? renderManage() : renderMap()));
   window.scrollTo(0, y);
 }
-document.getElementById("repo-name").textContent = CONFIG.name;
-document.title = `VibeDoc · ${CONFIG.name}`;
-if (!CONFIG.codemap) for (const v of ["map", "graph"]) document.querySelector(`.tabs button[data-view="${v}"]`).remove();
 document.querySelectorAll(".tabs button[data-view]").forEach((b) => b.addEventListener("click", () => { state.view = b.dataset.view; state.highlight = null; render(); window.scrollTo(0, 0); }));
 document.getElementById("module").addEventListener("change", (e) => { state.module = e.target.value; render(); });
 let searchTimer;
@@ -1564,9 +1736,12 @@ document.getElementById("stop").addEventListener("click", async () => {
   document.getElementById("live").className = "live";
 });
 
+let events = null;
 function connect() {
   const live = document.getElementById("live");
-  const es = new EventSource("/api/events");
+  events?.close();
+  if (!PROJECT) return;
+  const es = (events = new EventSource(P("/events")));
   es.onopen = () => { live.textContent = "实时同步"; live.className = "live ok"; };
   es.onerror = () => { if (live.textContent !== "已停止") { live.textContent = "连接断开，重连中…"; live.className = "live"; } };
   es.addEventListener("rules", async () => { await loadRules(); render(); });
@@ -1581,13 +1756,55 @@ function connect() {
     render();
   });
   es.addEventListener("tables", async () => { await loadTables(); render(); });
+  es.addEventListener("docs", async () => { await loadDocs(); state.manage.changelogs = null; if (state.view === "manage" && !manageBusy()) render(); });
   es.addEventListener("code", async () => { await loadCode(); render(); toast("代码有变化，地图已更新"); });
+  es.addEventListener("projects", () => loadProjects(false));
 }
-(async () => {
-  await Promise.all([loadRules(), loadFeatures(), loadTables(), loadCode()]);
+
+// Applies the selected project's settings to the header (title, tabs that need a code map).
+function applyProject() {
+  CONFIG = PROJECTS.find((p) => p.id === PROJECT) || CONFIG;
+  document.title = PROJECT ? `VibeDoc · ${CONFIG.name}` : "VibeDoc";
+  for (const v of ["map", "graph"]) document.querySelector(`.tabs button[data-view="${v}"]`).style.display = CONFIG.codemap ? "" : "none";
+  if (!CONFIG.codemap && (state.view === "map" || state.view === "graph")) state.view = "board";
+  const sel = document.getElementById("project");
+  sel.replaceChildren(...PROJECTS.map((p) => h("option", { value: p.id }, p.name)));
+  sel.value = PROJECT;
+  sel.style.display = PROJECTS.length > 1 ? "" : "none";
+}
+async function loadAll() {
+  await Promise.all([loadRules(), loadFeatures(), loadTables(), loadCode(), loadDocs()]);
+}
+async function selectProject(id) {
+  if (state.feat.edit?.dirty && !confirm("功能文档还有未保存的修改，切换项目会丢失，继续？")) {
+    document.getElementById("project").value = PROJECT;
+    return;
+  }
+  PROJECT = id;
+  remember("project", id);
+  if (location.hash.slice(1) !== id) history.replaceState(null, "", `#${id}`);
+  Object.assign(state, { code: null, rules: [], tables: [], features: { modules: [], items: [] }, docs: null, mapGroup: {}, highlight: null, module: "" });
+  state.feat = { module: saved(`featModule:${id}`, ""), status: "" };
+  state.graph.group = ""; state.graph.page = ""; state.graph.focus = null;
+  state.manage = { ...state.manage, file: null, text: "", changelogs: null, open: new Set() };
+  closePopover();
+  applyProject();
+  await loadAll();
   render();
   connect();
-})();
+}
+async function loadProjects(first) {
+  const data = await (await fetch("/api/projects")).json();
+  PROJECTS = data.projects;
+  const want = location.hash.slice(1) || saved("project", "");
+  const next = PROJECTS.some((p) => p.id === PROJECT) ? PROJECT : PROJECTS.some((p) => p.id === want) ? want : PROJECTS[0]?.id || "";
+  if (first || next !== PROJECT) return selectProject(next);
+  applyProject();
+  render();
+}
+document.getElementById("project").addEventListener("change", (e) => selectProject(e.target.value));
+window.addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && id !== PROJECT && PROJECTS.some((p) => p.id === id)) selectProject(id); });
+loadProjects(true);
 </script>
 </body>
 </html>

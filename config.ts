@@ -1,6 +1,7 @@
 // Per-repository configuration: `vibedoc.config.json` at the root of the repository VibeDoc serves.
 // Every path is relative to that root. Only `name` is required; everything else has a default, and the
 // code map (Rust + SQL migrations + TS/React frontend analysis) is off unless `codemap` is present.
+// The document layout (`docs`) defaults to the tree `vibedoc init` creates under `docs.root` ("doc").
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
@@ -14,9 +15,31 @@ export type CrateConfig = {
   mainName?: "crate" | "build-app";
 };
 
+// Where each part of the managed document system lives.
+export type DocsLayout = {
+  root: string; // AI-maintained area; holds README.md and the local AGENTS.md
+  human: string; // the user's own area
+  requests: string; // the user's requirements, one file per topic
+  sketches: string; // UI sketches and annotated screenshots
+  questions: string; // open questions waiting for the user's decision
+  deliverables: string; // write-ups for people (manuals, overviews)
+  behavior: string; // current product behavior
+  contracts: string[]; // API and data contracts
+  todo: string; // product backlog / in progress / under test
+  goals: string; // multi-step goals and their open decisions
+  totest: string; // outstanding manual QA handoffs
+  changelogs: string; // dated change logs: <date>/<HHMMSS>_<role>_<slug>.md
+  expired: string; // superseded documents
+};
+
 export type Config = {
   name: string;
   port: number;
+  // Language for every reply and document the AI writes.
+  language: string;
+  docs: DocsLayout;
+  // Integration branch, promotion chain (first = integration, last = release) and task branch prefix.
+  git: { promotion: string[]; branchPrefix: string };
   rulesDir: string;
   featuresDir: string;
   tablesDir: string;
@@ -54,12 +77,33 @@ export function loadConfig(root: string): Config {
   const str = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() ? v.trim() : fallback);
   const strs = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
   const cm = raw.codemap;
+  const d = raw.docs && typeof raw.docs === "object" ? raw.docs : {};
+  const docRoot = str(d.root, "doc");
+  const human = str(d.human, `${docRoot}/human`);
+  const promotion = strs(raw.git?.promotion);
   return {
     name: str(raw.name, root.split("/").pop() || "VibeDoc"),
     port: Number(process.env.PORT ?? raw.port ?? 4870),
-    rulesDir: str(raw.rulesDir, "doc/rules"),
-    featuresDir: str(raw.featuresDir, "doc/features"),
-    tablesDir: str(raw.tablesDir, "doc/table-changes"),
+    language: str(raw.language, "简体中文"),
+    docs: {
+      root: docRoot,
+      human,
+      requests: str(d.requests, `${human}/requests`),
+      sketches: str(d.sketches, `${human}/ui-sketch`),
+      questions: str(d.questions, `${human}/open_questions.md`),
+      deliverables: str(d.deliverables, `${human}/deliverable`),
+      behavior: str(d.behavior, `${docRoot}/behavior`),
+      contracts: Array.isArray(d.contracts) ? strs(d.contracts) : [`${docRoot}/backend`, `${docRoot}/tables`],
+      todo: str(d.todo, `${docRoot}/todo.md`),
+      goals: str(d.goals, `${docRoot}/goal_logs.md`),
+      totest: str(d.totest, `${docRoot}/totest`),
+      changelogs: str(d.changelogs, `${docRoot}/change_logs`),
+      expired: str(d.expired, `${docRoot}/expired`),
+    },
+    git: { promotion: promotion.length ? promotion : ["dev", "main"], branchPrefix: str(raw.git?.branchPrefix, "codex/") },
+    rulesDir: str(raw.rulesDir, `${human}/rules`),
+    featuresDir: str(raw.featuresDir, `${docRoot}/features`),
+    tablesDir: str(raw.tablesDir, `${docRoot}/table-changes`),
     modulesFile: typeof raw.modulesFile === "string" ? raw.modulesFile : null,
     modules: raw.modules && typeof raw.modules === "object" ? Object.fromEntries(Object.entries(raw.modules).map(([k, v]) => [k, String(v)])) : {},
     codemap: cm

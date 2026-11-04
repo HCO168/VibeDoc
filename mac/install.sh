@@ -1,17 +1,22 @@
 #!/bin/bash
-# Build "~/Applications/<名称>.app", a launcher for one repository that Spotlight, Raycast and Alfred can find.
-#   mac/install.sh <仓库目录> [--name "VibeDoc"]
-# Use a different --name (and `port` in that repository's vibedoc.config.json) for each repository.
-# The app only records the repository, the VibeDoc folder and the node binary; the launch logic stays
-# in VibeDoc (mac/launch.sh), so updating VibeDoc needs no reinstall. On first launch macOS asks to
-# let the app access the folder holding the repository (and to control Chrome).
+# Build "~/Applications/<名称>.app", a launcher for the VibeDoc board of all registered projects that
+# Spotlight, Raycast and Alfred can find.
+#   mac/install.sh [仓库目录] [--name "VibeDoc"]      a repository given here is registered as well
+# The app only records the VibeDoc folder and the node binary; the launch logic stays in VibeDoc
+# (mac/launch.sh), so updating VibeDoc needs no reinstall. On first launch macOS asks to let the app
+# access the folders holding the repositories (and to control Chrome).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TOOL="$(cd "$HERE/.." && pwd)"
-REPO="$(cd "${1:-.}" && pwd)"
+REPO=""
 NAME="VibeDoc"
-[ "${2:-}" = "--name" ] && [ -n "${3:-}" ] && NAME="$3"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --name) NAME="${2:-VibeDoc}"; shift 2 ;;
+    *) REPO="$(cd "$1" && pwd)"; shift ;;
+  esac
+done
 NODE="$(command -v node || true)"
 APP="$HOME/Applications/$NAME.app"
 
@@ -23,8 +28,10 @@ if ! "$NODE" -e 'const [a,b]=process.versions.node.split(".").map(Number); proce
   echo "node $("$NODE" --version) 太旧，需要 23.6 或更高版本" >&2
   exit 1
 fi
-[ -f "$REPO/vibedoc.config.json" ] || { echo "$REPO 里没有 vibedoc.config.json，先在该仓库运行 vibedoc init" >&2; exit 1; }
-PORT="$("$NODE" -e 'try { console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).port || 4870) } catch { console.log(4870) }' "$REPO/vibedoc.config.json")"
+if [ -n "$REPO" ]; then
+  "$NODE" "$TOOL/vibedoc.ts" add "$REPO" || exit 1
+fi
+PORT="${PORT:-4870}"
 
 # AppleScript applet rather than a bare shell-script bundle: macOS only asks a real app for
 # Documents access, and the server it starts inherits that permission. It stays open (idle
@@ -60,7 +67,7 @@ on openBoard()
 	on error errMsg number errNum
 		if errMsg contains "Operation not permitted" then
 			activate
-			display alert "$(as_str "$NAME")" message "没有权限读取 " & repoPath() & "。请在「系统设置 → 隐私与安全性 → 文件与文件夹」里允许 $(as_str "$NAME") 访问该文件夹，然后重新打开。"
+			display alert "$(as_str "$NAME")" message "没有权限读取项目文件夹。请在「系统设置 → 隐私与安全性 → 文件与文件夹」里允许 $(as_str "$NAME") 访问项目所在的文件夹（如「文稿」），然后重新打开。"
 		else if errNum is not 1 then
 			activate
 			display alert "$(as_str "$NAME")" message errMsg

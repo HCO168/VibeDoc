@@ -1,19 +1,43 @@
 {
   "name": "HCONet",
   "port": 4870,
+  "language": "简体中文",
+  "git": {
+    "promotion": [
+      "dev",
+      "beta",
+      "main"
+    ],
+    "branchPrefix": "codex/"
+  },
   "rulesDir": "doc/human/rules",
   "featuresDir": "doc/features",
   "modulesFile": "doc/modules/modules.yaml",
   "codemap": {
     "outDir": "doc/modules",
     "crates": [
-      { "dir": "backend/main-backend", "lib": "rust_website", "mainName": "build-app" },
-      { "dir": "backend/admin-backend", "lib": "admin_backend" },
-      { "dir": "backend/beside-backend", "lib": "beside_backend" },
-      { "dir": "backend/backend-common", "lib": "hconet_backend_common" }
+      {
+        "dir": "backend/main-backend",
+        "lib": "rust_website",
+        "mainName": "build-app"
+      },
+      {
+        "dir": "backend/admin-backend",
+        "lib": "admin_backend"
+      },
+      {
+        "dir": "backend/beside-backend",
+        "lib": "beside_backend"
+      },
+      {
+        "dir": "backend/backend-common",
+        "lib": "hconet_backend_common"
+      }
     ],
     "migrationsDir": "backend/database/migrations",
-    "publicMigrationDirs": ["legacy-public"],
+    "publicMigrationDirs": [
+      "legacy-public"
+    ],
     "frontendRoots": [
       "frontend/main-frontend/src",
       "frontend/admin-frontend/src",

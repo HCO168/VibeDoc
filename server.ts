@@ -79,7 +79,10 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/health") {
       return send(res, 200, { app: "vibedoc", mode: only ? "only" : "registry", root: cwdRoot, roots: [...projects.values()].map((p) => p.root), pid: process.pid });
     }
-    if (req.method === "GET" && url.pathname === "/api/projects") return send(res, 200, { projects: [...projects.values()].map((p) => p.info()), mode: only ? "only" : "registry" });
+    if (req.method === "GET" && url.pathname === "/api/projects") {
+      await Promise.all([...projects.values()].map((p) => p.ready));
+      return send(res, 200, { projects: [...projects.values()].map((p) => p.info()), mode: only ? "only" : "registry" });
+    }
     if (req.method !== "GET" && url.pathname.startsWith("/api/")) {
       if (req.headers["x-board-token"] !== token) return send(res, 403, { error: "缺少或错误的看板令牌，请刷新页面" });
       const host = String(req.headers.host ?? "");
@@ -95,6 +98,7 @@ const server = createServer(async (req, res) => {
     if (scoped) {
       const project = projects.get(scoped[1]);
       if (!project) return send(res, 404, { error: "没有这个项目，请刷新页面" });
+      await project.ready;
       let data: any = {};
       if (req.method !== "GET") {
         const upload = scoped[2] === "/docs/sketches";

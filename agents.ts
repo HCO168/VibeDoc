@@ -21,7 +21,7 @@ export function renderTemplate(text: string, vars: Record<string, unknown>): str
     });
 }
 
-export function templateVars(cfg: Config) {
+export function templateVars(cfg: Config, pluginRules = "") {
   const code = (s: string) => `\`${s}\``;
   const promotion = cfg.git.promotion;
   return {
@@ -30,6 +30,7 @@ export function templateVars(cfg: Config) {
     contractsList: cfg.docs.contracts.map((c) => code(`${c}/`)).join("、"),
     git: { ...cfg.git, integration: promotion[0], release: promotion[promotion.length - 1], chain: promotion.map(code).join(" → ") },
     modulesSource: cfg.modulesFile ? code(cfg.modulesFile) : "the `modules` of `vibedoc.config.json`",
+    pluginRules,
   };
 }
 
@@ -41,19 +42,20 @@ const begin = (key: string) => `<!-- vibedoc:${key}:begin — 由 \`vibedoc agen
 const end = (key: string) => `<!-- vibedoc:${key}:end -->`;
 const blockRe = (key: string) => new RegExp(`<!-- vibedoc:${key}:begin[^\\n]*-->\\n[\\s\\S]*?<!-- vibedoc:${key}:end -->`);
 
-function renderBlock(key: string, template: string, cfg: Config): string {
-  const body = renderTemplate(readFileSync(join(here, "templates/agents", template), "utf8"), templateVars(cfg)).trim();
+function renderBlock(key: string, template: string, cfg: Config, pluginRules: string): string {
+  const body = renderTemplate(readFileSync(join(here, "templates/agents", template), "utf8"), templateVars(cfg, pluginRules)).trim();
   return `${begin(key)}\n${body}\n${end(key)}`;
 }
 
 export type SyncResult = { file: string; state: "created" | "updated" | "inserted" | "unchanged" | "stale" | "missing" };
 
-// With `write` false only reports whether each block is current.
-export function syncAgents(root: string, cfg: Config, write: boolean): SyncResult[] {
+// With `write` false only reports whether each block is current. `pluginRules` is what the project's
+// plugins add (plugins.ts pluginRules), so callers load the plugins first.
+export function syncAgents(root: string, cfg: Config, write: boolean, pluginRules = ""): SyncResult[] {
   return BLOCKS.map(({ key, template, file, title }) => {
     const rel = file(cfg);
     const path = join(root, rel);
-    const block = renderBlock(key, template, cfg);
+    const block = renderBlock(key, template, cfg, pluginRules);
     if (!existsSync(path)) {
       if (write) {
         mkdirSync(dirname(path), { recursive: true });

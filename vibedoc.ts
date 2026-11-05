@@ -5,12 +5,14 @@
 //   vibedoc rules|features|tables <命令>                   status commands for rules, feature documents and table requests
 //   vibedoc changelog|question|todo|totest|agents <命令>   document system commands (see docs/cli.ts)
 //   vibedoc codemap <命令>           code map generation and queries (needs `codemap` in the config)
+//   vibedoc plugins                 the project's plugins and their commands; vibedoc <插件命令> runs one
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_FILE, findRoot, loadConfig, type Config } from "./config.ts";
 import { renderTemplate, syncAgents, templateVars } from "./agents.ts";
 import { addProject, listProjects, projectIds, removeProject } from "./registry.ts";
+import { loadPlugins, pluginContext, pluginRules } from "./plugins.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
@@ -42,7 +44,7 @@ function scaffold(cfg: Config): [string, string][] {
   ];
 }
 
-function init() {
+async function init() {
   const root = process.cwd();
   const i = rest.indexOf("--name");
   const name = i >= 0 && rest[i + 1] ? rest[i + 1] : basename(root);
@@ -63,13 +65,44 @@ function init() {
     writeFileSync(path, renderTemplate(readFileSync(join(here, "templates/scaffold", template), "utf8"), vars));
     console.log(`已创建 ${rel}`);
   }
-  for (const r of syncAgents(root, cfg, true)) console.log(`${r.file}：${{ created: "已创建", updated: "已更新", inserted: "已插入规则区块", unchanged: "已是最新" }[r.state as string] ?? r.state}`);
+  const { plugins, errors } = await loadPlugins(root, cfg);
+  for (const e of errors) console.error(`插件加载失败：${e}`);
+  for (const r of syncAgents(root, cfg, true, pluginRules(plugins))) console.log(`${r.file}：${{ created: "已创建", updated: "已更新", inserted: "已插入规则区块", unchanged: "已是最新" }[r.state as string] ?? r.state}`);
   if (addProject(root)) console.log("已加入 VibeDoc 项目列表");
   console.log(`\n下一步：\n  1. 在 ${CONFIG_FILE} 里列出 modules，按需要调整 git.promotion、docs 路径；需要代码地图时加上 codemap。\n  2. 本项目特有的规则写在 AGENTS.md 区块外；改了配置后运行 vibedoc agents sync。\n  3. 运行 vibedoc serve 打开看板。`);
 }
 
+// Commands contributed by the plugins of the repository you are in.
+async function pluginCommand(name: string | undefined): Promise<boolean> {
+  let root: string;
+  try {
+    root = findRoot();
+  } catch {
+    return false;
+  }
+  const cfg = loadConfig(root);
+  const { plugins, errors } = await loadPlugins(root, cfg);
+  for (const e of errors) console.error(`插件加载失败：${e}`);
+  if (name === "plugins") {
+    if (!plugins.length) console.log("这个项目没有插件（vibedoc.config.json 的 plugins）");
+    for (const { plugin, file } of plugins) {
+      console.log(`${plugin.name}${plugin.title ? `（${plugin.title}）` : ""}  ${file}`);
+      for (const [cmd, c] of Object.entries(plugin.commands ?? {})) console.log(`  vibedoc ${cmd}  ${c.describe}`);
+    }
+    return true;
+  }
+  for (const { plugin } of plugins) {
+    const cmd = name ? plugin.commands?.[name] : undefined;
+    if (cmd) {
+      await cmd.run(rest, pluginContext(root, cfg));
+      return true;
+    }
+  }
+  return false;
+}
+
 if (command === "init") {
-  init();
+  await init();
 } else if (command === "add") {
   const root = rest[0] ?? findRoot();
   console.log(addProject(root) ? `已加入：${root}` : `已在列表中：${root}`);
@@ -87,7 +120,7 @@ if (command === "init") {
 } else if (command && SUBCOMMANDS[command]) {
   process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
   await import(join(here, SUBCOMMANDS[command]));
-} else {
-  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | rules | features | tables | changelog | question | todo | totest | agents | codemap");
+} else if (!(await pluginCommand(command))) {
+  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | plugins | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
   process.exitCode = command ? 1 : 0;
 }

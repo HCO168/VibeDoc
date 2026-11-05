@@ -35,8 +35,10 @@ export function parseFront(src: string, firstSegments: Set<string>): FrontFile {
   }
   for (const em of src.matchAll(/^export\s+(?:default\s+)?(?:async\s+)?(?:function\s*\*?|const|let|class)\s+([A-Za-z_$][\w$]*)/gm)) out.exports.push(em[1]);
 
-  const literalRe = /(["'`])(\/[A-Za-z][^"'`\s]*?)\1/g;
+  // A path literal, optionally after one `${base}` prefix (`${API}/items`); route declarations are pages, not requests.
+  const literalRe = /(["'`])(?:\$\{[^}]*\})?(\/[A-Za-z][^"'`\s]*?)\1/g;
   while ((m = literalRe.exec(src))) {
+    if (/\bpath=\s*$/.test(src.slice(Math.max(0, m.index - 12), m.index))) continue;
     let path = m[2];
     const first = path.split(/[/?$]/)[1];
     if (!firstSegments.has(first)) continue;

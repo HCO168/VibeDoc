@@ -45,5 +45,8 @@
       "frontend/packages/shared/src",
       "frontend/meanease/src"
     ]
-  }
+  },
+  "plugins": [
+    "tools/vibedoc-plugins/translations/plugin.ts"
+  ]
 }

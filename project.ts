@@ -10,6 +10,7 @@ import { specOf, normalize, formatSpec, toSql } from "./tables/spec.ts";
 import { DocSystem } from "./docs/store.ts";
 import { syncAgents } from "./agents.ts";
 import { loadConfig, type Config } from "./config.ts";
+import { loadPlugins, pluginContext, pluginRules, type LoadedPlugin } from "./plugins.ts";
 
 export const send = (res: ServerResponse, status: number, data: unknown, type = "application/json; charset=utf-8") => {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -55,9 +56,14 @@ export class Project {
   features: RuleStore;
   tables: RuleStore;
   docs: DocSystem;
+  plugins: LoadedPlugin[] = [];
+  pluginErrors: string[] = [];
+  // Resolves once the plugins are loaded; requests wait for it.
+  ready: Promise<void>;
   private codemap: string | null = null;
   private clients = new Set<ServerResponse>();
   private watchers: FSWatcher[] = [];
+  private pluginWatchers: FSWatcher[] = [];
 
   constructor(id: string, root: string) {
     this.id = id;
@@ -71,6 +77,31 @@ export class Project {
     this.docs = new DocSystem(root, this.cfg);
     this.rules.titles = this.features.titles = this.titles();
     this.watch();
+    this.ready = this.loadPlugins();
+  }
+
+  private async loadPlugins() {
+    const { plugins, errors } = await loadPlugins(this.root, this.cfg);
+    for (const w of this.pluginWatchers) w.close();
+    this.pluginWatchers = [];
+    this.plugins = plugins;
+    this.pluginErrors = errors;
+    for (const e of errors) console.error(`vibedoc: ${this.id}: 插件加载失败：${e}`);
+    for (const { plugin } of plugins) {
+      for (const rel of plugin.watch ?? []) {
+        const abs = join(this.root, rel);
+        if (!existsSync(abs)) continue;
+        const notify = debounce(() => this.emit("plugin", { name: plugin.name }), 400);
+        try {
+          this.pluginWatchers.push(watch(abs, { recursive: true }, () => notify()));
+        } catch (error) {
+          console.error(`vibedoc: ${this.id}: cannot watch ${rel}: ${(error as Error).message}`);
+        }
+      }
+    }
+  }
+  private ctx(name: string) {
+    return pluginContext(this.root, this.cfg, () => this.emit("plugin", { name }));
   }
 
   info() {
@@ -78,7 +109,9 @@ export class Project {
     return {
       id: this.id, name: c.name, root: this.root, rulesDir: c.rulesDir, featuresDir: c.featuresDir, tablesDir: c.tablesDir,
       migrationsDir: c.codemap?.migrationsDir ?? null, codemap: !!c.codemap, docs: c.docs,
-      agents: syncAgents(this.root, c, false).filter((r) => r.state !== "unchanged").map((r) => r.file),
+      agents: syncAgents(this.root, c, false, pluginRules(this.plugins)).filter((r) => r.state !== "unchanged").map((r) => r.file),
+      plugins: this.plugins.map(({ plugin }) => ({ name: plugin.name, title: plugin.title ?? plugin.name, view: !!plugin.client })),
+      pluginErrors: this.pluginErrors,
     };
   }
 
@@ -89,12 +122,12 @@ export class Project {
     return map;
   }
 
-  emit(event: string) {
-    for (const res of this.clients) res.write(`event: ${event}\ndata: {}\n\n`);
+  emit(event: string, data: unknown = {}) {
+    for (const res of this.clients) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
   close() {
-    for (const w of this.watchers) w.close();
+    for (const w of [...this.watchers, ...this.pluginWatchers]) w.close();
     for (const res of this.clients) res.end();
   }
 
@@ -124,7 +157,8 @@ export class Project {
       this.cfg = loadConfig(this.root);
       this.docs = new DocSystem(this.root, this.cfg);
       this.rules.titles = this.features.titles = this.titles();
-      this.emit("code");
+      this.ready = this.loadPlugins();
+      this.ready.then(() => this.emit("code"));
     }, 800);
     // Watch a directory, or (until it exists) its nearest existing ancestor filtered to paths inside it.
     const watchPath = (rel: string, cb: (file: string) => void) => {
@@ -170,6 +204,8 @@ export class Project {
   // or the raw bytes for an upload.
   handle(req: IncomingMessage, res: ServerResponse, path: string, query: URLSearchParams, data: any): void {
     const { rules, features, tables, docs } = this;
+    const plug = /^\/plugins\/([a-z0-9-]+)\/(.+)$/.exec(path);
+    if (plug) return this.handlePlugin(req, res, plug[1], plug[2], query, data);
     if (req.method === "GET") {
       if (path === "/codemap") return send(res, 200, this.codemapJson());
       if (path === "/rules") return send(res, 200, { items: rules.all().map(view) });
@@ -270,5 +306,22 @@ export class Project {
       return done(move[1], 200, move[1] === "tables" ? tableView(item) : view(item));
     }
     send(res, 404, { error: "not found" });
+  }
+
+  // /plugins/<name>/client.js serves the plugin's browser script; other routes go to its get/post handlers.
+  private handlePlugin(req: IncomingMessage, res: ServerResponse, name: string, route: string, query: URLSearchParams, data: any) {
+    const loaded = this.plugins.find((p) => p.plugin.name === name);
+    if (!loaded) return send(res, 404, { error: `没有插件 ${name}` });
+    const { plugin, dir } = loaded;
+    if (req.method === "GET" && route === "client.js") {
+      if (!plugin.client) return send(res, 404, { error: "这个插件没有页面" });
+      return send(res, 200, readFileSync(join(dir, plugin.client), "utf8"), "text/javascript; charset=utf-8");
+    }
+    const handler = req.method === "GET" ? plugin.get?.[route] : req.method === "POST" ? plugin.post?.[route] : undefined;
+    if (!handler) return send(res, 404, { error: `插件 ${name} 没有 ${req.method} ${route}` });
+    Promise.resolve()
+      .then(() => handler(req.method === "GET" ? query : data, this.ctx(name)))
+      .then((result) => send(res, 200, result ?? { success: true }))
+      .catch((error) => send(res, (error as { status?: number }).status ?? 400, { error: (error as Error).message }));
   }
 }

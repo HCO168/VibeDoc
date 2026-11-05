@@ -924,7 +924,7 @@ const MANAGE_SECTIONS = [
   ["requests", "需求原话"], ["sketches", "UI 草图"], ["deliverables", "交付说明"], ["index", "文档入口"],
 ];
 // Typing into a form in this view: live updates wait so the input is not replaced.
-const manageBusy = () => !!document.activeElement?.closest?.(".manage-panel") && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+const manageBusy = () => !!document.activeElement?.closest?.(".manage-panel, .plugin-panel") && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
 const rawUrl = (path) => P(`/docs/raw?path=${encodeURIComponent(path)}`);
 async function openDocFile(path) {
   state.manage.file = path;
@@ -951,6 +951,7 @@ function renderManage() {
   const side = h("div", { class: "mods" }, h("div", { class: "grp-h" }, "项目管理"), MANAGE_SECTIONS.map(([k, name]) => h("button", { class: m.section === k ? "on" : "", onclick: () => { m.section = k; m.file = null; remember("manageSection", k); render(); window.scrollTo(0, 0); } },
     h("span", {}, name), k === "questions" && counts.questions - answered ? h("span", { class: "rulecount", title: "等你回答" }, counts.questions - answered) : null, h("span", { class: "c" }, counts[k] || ""))));
   const p = d.paths;
+  const pluginWarn = CONFIG.pluginErrors?.length ? h("div", { class: "warn-box" }, "插件加载失败：", CONFIG.pluginErrors.join("；")) : null;
   const warn = CONFIG.agents?.length ? h("div", { class: "warn-box" }, "AI 规则区块不是最新：", joinNodes(CONFIG.agents.map((f) => h("code", { class: "mono" }, f))), "。在仓库里运行 ", h("code", { class: "mono" }, "vibedoc agents sync"), " 更新。") : null;
   let body = [];
   if (m.section === "questions") {
@@ -1037,7 +1038,7 @@ function renderManage() {
   } else if (m.section === "deliverables") {
     body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.deliverables), "：给人读的交付说明。"), ...fileBrowser(d.deliverables, "还没有交付说明。")];
   }
-  return [h("div", { class: "map" }, side, h("div", { class: "panel manage-panel" }, warn, ...body))];
+  return [h("div", { class: "map" }, side, h("div", { class: "panel manage-panel" }, pluginWarn, warn, ...body))];
 }
 
 // ---------- code map ----------
@@ -1716,10 +1717,15 @@ function render() {
     main.replaceChildren(h("div", { class: "empty", style: "padding:40px;text-align:center;font-size:14px" }, "还没有项目。在要管理的仓库根目录运行 vibedoc init（或已有配置时运行 vibedoc add），这里会自动出现。"));
     return;
   }
-  main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : state.view === "manage" ? renderManage() : renderMap()));
+  main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : state.view === "manage" ? renderManage() : state.view.startsWith("plugin:") ? renderPlugin(state.view.slice(7)) : renderMap()));
   window.scrollTo(0, y);
 }
-document.querySelectorAll(".tabs button[data-view]").forEach((b) => b.addEventListener("click", () => { state.view = b.dataset.view; state.highlight = null; render(); window.scrollTo(0, 0); }));
+// Delegated so plugin tabs added per project work too.
+document.querySelector("header .tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-view]");
+  if (!b) return;
+  state.view = b.dataset.view; state.highlight = null; render(); window.scrollTo(0, 0);
+});
 document.getElementById("module").addEventListener("change", (e) => { state.module = e.target.value; render(); });
 let searchTimer;
 document.getElementById("search").addEventListener("input", (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = e.target.value.trim(); render(); }, 150); });
@@ -1735,6 +1741,68 @@ document.getElementById("stop").addEventListener("click", async () => {
   document.getElementById("live").textContent = "已停止";
   document.getElementById("live").className = "live";
 });
+
+// ---------- plugins ----------
+// A plugin's browser script calls VibeDoc.registerView(name, render); render(vd) returns nodes and reads
+// server data through vd.data(route), which fetches once, re-renders when it arrives and refreshes on change.
+const pluginViews = {};
+const pluginData = {};
+const pluginScripts = new Set();
+function pluginApi(name) {
+  const cache = (pluginData[`${PROJECT}:${name}`] ??= { values: {}, pending: {}, state: {} });
+  const route = (r) => `/plugins/${name}/${r}`;
+  return {
+    h, mdBlocks: (text) => mdBlocks(text || "", (t) => h("h4", { class: "doc-h3" }, mdInline(t))), mdInline, toast, render, joinNodes,
+    project: CONFIG, state: cache.state,
+    data(r) {
+      if (r in cache.values) return cache.values[r];
+      if (!cache.pending[r]) {
+        cache.pending[r] = getJson(route(r))
+          .then((v) => { cache.values[r] = v; }, (e) => { cache.values[r] = { error: e.message }; })
+          .finally(() => { delete cache.pending[r]; if (state.view === `plugin:${name}`) render(); });
+      }
+      return undefined;
+    },
+    async post(r, data) {
+      const result = await api("POST", `/api${route(r)}`, data);
+      cache.values = {};
+      render();
+      return result;
+    },
+    refresh() { cache.values = {}; render(); },
+  };
+}
+// Views are kept per project: two projects may have plugins with the same name.
+window.VibeDoc = {
+  registerView(name, renderFn) {
+    const project = document.currentScript?.dataset.project ?? PROJECT;
+    pluginViews[`${project}:${name}`] = renderFn;
+    if (project === PROJECT && state.view === `plugin:${name}`) render();
+  },
+};
+function renderPlugin(name) {
+  const view = pluginViews[`${PROJECT}:${name}`];
+  if (!view) return [h("div", { class: "empty" }, "插件页面加载中…")];
+  try {
+    const out = view(pluginApi(name));
+    return [h("div", { class: "panel plugin-panel" }, out)];
+  } catch (e) {
+    return [h("div", { class: "err" }, `插件 ${name} 出错：${e.message}`)];
+  }
+}
+function applyPlugins() {
+  document.querySelectorAll('.tabs button[data-view^="plugin:"]').forEach((b) => b.remove());
+  const tabs = document.querySelector("header .tabs");
+  for (const p of CONFIG.plugins || []) {
+    if (!p.view) continue;
+    tabs.append(h("button", { "data-view": `plugin:${p.name}`, title: "项目插件" }, p.title));
+    const key = `${PROJECT}:${p.name}`;
+    if (pluginScripts.has(key)) continue;
+    pluginScripts.add(key);
+    document.head.append(h("script", { src: P(`/plugins/${p.name}/client.js`), "data-project": PROJECT }));
+  }
+  if (state.view.startsWith("plugin:") && !(CONFIG.plugins || []).some((p) => `plugin:${p.name}` === state.view)) state.view = "board";
+}
 
 let events = null;
 function connect() {
@@ -1759,6 +1827,12 @@ function connect() {
   es.addEventListener("docs", async () => { await loadDocs(); state.manage.changelogs = null; if (state.view === "manage" && !manageBusy()) render(); });
   es.addEventListener("code", async () => { await loadCode(); render(); toast("代码有变化，地图已更新"); });
   es.addEventListener("projects", () => loadProjects(false));
+  es.addEventListener("plugin", (e) => {
+    const { name } = JSON.parse(e.data || "{}");
+    const cache = pluginData[`${PROJECT}:${name}`];
+    if (cache) cache.values = {};
+    if (state.view === `plugin:${name}` && !manageBusy()) render();
+  });
 }
 
 // Applies the selected project's settings to the header (title, tabs that need a code map).
@@ -1767,6 +1841,7 @@ function applyProject() {
   document.title = PROJECT ? `VibeDoc · ${CONFIG.name}` : "VibeDoc";
   for (const v of ["map", "graph"]) document.querySelector(`.tabs button[data-view="${v}"]`).style.display = CONFIG.codemap ? "" : "none";
   if (!CONFIG.codemap && (state.view === "map" || state.view === "graph")) state.view = "board";
+  applyPlugins();
   const sel = document.getElementById("project");
   sel.replaceChildren(...PROJECTS.map((p) => h("option", { value: p.id }, p.name)));
   sel.value = PROJECT;

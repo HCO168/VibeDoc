@@ -19,6 +19,8 @@ const cfg = loadConfig(root);
 const kind = kindsFor(cfg).tables;
 const store = new RuleStore(root, new Map(), kind);
 const [command, ...args] = process.argv.slice(2);
+// New items written by hand get their ids before anything is listed or shown.
+if (["list", "show", "summary", "sql"].includes(command)) for (const m of store.modules()) store.refresh(m);
 const NAMES = TABLES.names;
 
 let replayed: Map<string, { columns: { name: string }[] }> | null = null;

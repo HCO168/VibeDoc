@@ -27,6 +27,8 @@
 
 **3. 命令**：AI 通过 `vibedoc` 命令改状态、写日志、提问，格式统一（见下文）。
 
+**项目插件**：只适合某个项目的功能（例如它自己的翻译表、部署流程）用插件接入，不改 VibeDoc 本身。插件可以加命令、看板标签页、接口和 AI 规则，写法见下文「插件」。
+
 **4. 看板**：
 
 - **规则看板**：规则按 新提出、待你确认、进行中、已修改、已实现 分列，另有搁置区；卡片可编辑，待你确认的可「确认计划，开始做」或「退回」。
@@ -84,7 +86,8 @@ App 是 `osacompile` 生成的 AppleScript 小程序（ad-hoc 签名）。首次
     "publicMigrationDirs": ["legacy-public"],
     "frontendRoots": ["frontend/src"]
   },
-  "watch": []
+  "watch": [],
+  "plugins": ["tools/vibedoc-plugins/translations/plugin.ts"]
 }
 ```
 
@@ -104,6 +107,7 @@ App 是 `osacompile` 生成的 AppleScript 小程序（ad-hoc 签名）。首次
 | `codemap.migrationsDir` | SQL 迁移目录：子目录名即该目录下文件的默认 schema；直接放在目录里或位于 `publicMigrationDirs` 的文件使用 `public` 并最先重放 |
 | `codemap.frontendRoots` | 前端 TypeScript／React 源码目录 |
 | `watch` | 额外需要触发代码地图刷新的目录 |
+| `plugins` | 项目插件的模块路径（相对仓库根目录），见「插件」 |
 
 代码地图目前识别：Rust（axum 路由、serde 结构体、SQL 字面量）、按目录分 schema 的 PostgreSQL 迁移、TypeScript／React 前端（`<Route>` 页面与 `fetch` 封装）。其他技术栈照样可以用除代码地图外的全部功能。
 
@@ -125,6 +129,29 @@ modules:
 
 `examples/` 里有一份真实项目的配置可参考。
 
+## 插件
+
+插件是仓库里的一个 ES 模块（TypeScript 可直接写），默认导出一个对象，所有字段都可选（`name` 除外）：
+
+| 字段 | 作用 |
+| --- | --- |
+| `name` | 插件名，小写字母、数字、连字符 |
+| `title`、`client` | 看板标签页的名称和浏览器脚本（相对插件文件）；脚本里调用 `VibeDoc.registerView(name, render)` |
+| `commands` | `{ 命令: { describe, run(args, ctx) } }`，用 `vibedoc <命令>` 运行，`vibedoc plugins` 列出 |
+| `get`、`post` | `{ 路由: (query 或 data, ctx) => 数据 }`，对应 `/api/p/<项目>/plugins/<name>/<路由>`；POST 需要看板令牌 |
+| `watch` | 这些路径变化时通知打开的看板刷新插件页 |
+| `rules` | 一段 Markdown 规则，`vibedoc agents sync` 把它写进 `AGENTS.md` 规则区块的「Project Plugins」 |
+
+`ctx` 提供 `root`（仓库路径）、`cfg`（配置）、`docs`（文档系统：问题、待办、变更日志等）和 `notify()`（通知看板刷新）。浏览器脚本的 `render(vd)` 返回页面节点，`vd` 提供 `h`（建元素）、`mdBlocks`、`data(路由)`（读取一次并在到达后重绘、插件数据变化时自动刷新）、`post(路由, 数据)`、`toast`、`state`（跨重绘保留的状态）。完整例子见 [`examples/plugins/hello/`](examples/plugins/hello/)。插件是项目自己的代码，和项目里的其他脚本一样按完全信任运行。
+
+## 测试
+
+```bash
+node --test test/vibedoc.test.ts
+```
+
+在临时目录里建两个项目（一个带代码地图和插件），跑遍所有命令和看板接口：初始化与规则区块同步、规则／功能文档／表变更、变更日志／待决问题／待办／待验收、代码地图、插件、多项目服务和越权访问拦截。
+
 ## 命令（AI 使用）
 
 ```bash
@@ -136,6 +163,7 @@ vibedoc question list | add "<问题>" [--body "<说明>"] | resolve <编号>
 vibedoc todo list | add <backlog|doing|testing> "<内容>"
 vibedoc totest list
 vibedoc agents sync | check
+vibedoc plugins                      # 本项目插件及其命令
 vibedoc codemap generate | fn <名称> | route <路径片段>
 ```
 
@@ -161,6 +189,8 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `rules/cli.ts`、`features/cli.ts`、`tables/cli.ts` | 状态命令 |
 | `tables/spec.ts` | 表变更条目的格式：字段表与约束的解析和写回、SQL 草稿、是否已在迁移中 |
 | `docs/store.ts`、`docs/cli.ts` | 变更日志、待决问题、待办、待验收、需求与草图的读写和命令 |
+| `plugins.ts` | 加载项目插件、插件规则 |
+| `test/vibedoc.test.ts` | 端到端测试 |
 | `codemap/` | 代码地图：Rust 词法扫描、迁移重放与 SQL 引用、前端 API 调用识别、serde 字段换算、YAML 子集解析、Markdown／JSON 输出 |
 | `mac/install.sh`、`mac/launch.sh`、`mac/icon.svg` | macOS 启动器 |
 | `templates/agents/` | AGENTS.md 规则区块模板（根目录规则、文档区规则） |

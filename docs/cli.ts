@@ -9,6 +9,7 @@
 //   vibedoc agents sync | check                         write or check the shared rule blocks in AGENTS.md
 import { DocSystem } from "./store.ts";
 import { syncAgents } from "../agents.ts";
+import { loadPlugins, pluginRules } from "../plugins.ts";
 import { findRoot, loadConfig } from "../config.ts";
 
 const [group, command, ...args] = process.argv.slice(2);
@@ -53,7 +54,9 @@ try {
   } else if (group === "totest" && command === "list") {
     for (const f of docs.listFiles(cfg.docs.totest)) if (!/(README|AGENTS)\.md$/.test(f.name)) console.log(f.path);
   } else if (group === "agents" && (command === "sync" || command === "check")) {
-    const results = syncAgents(root, cfg, command === "sync");
+    const { plugins, errors } = await loadPlugins(root, cfg);
+    for (const e of errors) console.error(`插件加载失败：${e}`);
+    const results = syncAgents(root, cfg, command === "sync", pluginRules(plugins));
     const names: Record<string, string> = { created: "已创建", updated: "已更新", inserted: "已插入区块", unchanged: "已是最新", stale: "需要同步", missing: "缺少区块" };
     for (const r of results) console.log(`${r.file}: ${names[r.state]}`);
     if (command === "check" && results.some((r) => r.state === "stale" || r.state === "missing")) process.exitCode = 1;

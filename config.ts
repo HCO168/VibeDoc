@@ -57,6 +57,8 @@ export type Config = {
   };
   // Extra directories whose changes refresh the code map (crate src, migrations and frontend roots are always watched).
   watch: string[];
+  // Project plugins: ES module paths relative to the repository root (see plugins.ts).
+  plugins: string[];
 };
 
 // The repository root: VIBEDOC_REPO, or the nearest directory upward from `start` holding the config file.
@@ -116,5 +118,6 @@ export function loadConfig(root: string): Config {
         }
       : null,
     watch: strs(raw.watch),
+    plugins: strs(raw.plugins),
   };
 }

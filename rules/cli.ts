@@ -15,6 +15,8 @@ const root = findRoot();
 const kind = kindsFor(loadConfig(root)).rules;
 const store = new RuleStore(root, new Map(), kind);
 const [command, ...args] = process.argv.slice(2);
+// New items written by hand get their ids before anything is listed or shown.
+if (["list", "show", "summary", "sql"].includes(command)) for (const m of store.modules()) store.refresh(m);
 const flag = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;

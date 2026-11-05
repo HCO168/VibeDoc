@@ -40,3 +40,10 @@
 
 - Review the focused diff, run `git diff --check`, and confirm collaborator work is preserved. Synchronize current documentation and the applicable change log; use the appropriate functional QA handoff (`{{docs.totest}}/`) only for real outstanding QA.
 - Report checks passed, important checks not run, and genuine deployment/migration/manual QA. For file changes, confirm `{{git.integration}}` merge/push and cleanup of only branches/worktrees created for the current task, then confirm `{{git.release}}` stayed unchanged unless this was an approved release. Do not report or enumerate other branches/worktrees unless the user explicitly asks.
+{{#pluginRules}}
+## Project Plugins
+
+Rules added by this project's VibeDoc plugins (`plugins` in `vibedoc.config.json`):
+
+{{pluginRules}}
+{{/pluginRules}}

@@ -27,6 +27,7 @@ export function templateVars(cfg: Config) {
   return {
     ...cfg,
     contracts: cfg.docs.contracts.map((c) => code(`${c}/*`)).join(" and "),
+    contractsList: cfg.docs.contracts.map((c) => code(`${c}/`)).join("、"),
     git: { ...cfg.git, integration: promotion[0], release: promotion[promotion.length - 1], chain: promotion.map(code).join(" → ") },
     modulesSource: cfg.modulesFile ? code(cfg.modulesFile) : "the `modules` of `vibedoc.config.json`",
   };

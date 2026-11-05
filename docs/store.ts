@@ -58,7 +58,7 @@ export class DocSystem {
     const rel = join(this.cfg.docs.changelogs, dateOf(now), `${timeOf(now)}_${role}_${slug}.md`);
     if (existsSync(this.abs(rel))) throw new Error(`${rel} 已存在`);
     const stamp = `${dateOf(now)} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${zone()}`.trim();
-    write(this.abs(rel), `## time: ${stamp} | role: ${role}\n\n### 变更内容\n\n- 用户要求：\n- \n\n### 影响范围\n\n- \n\n### 验证\n\n- \n`);
+    write(this.abs(rel), `## time: ${stamp} | role: ${role}\n\n### 变更内容\n\n- 用户要求：\n- \n\n### 影响范围\n\n- \n\n### 文档\n\n- \n\n### 验证\n\n- \n`);
     return rel;
   }
 

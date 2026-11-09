@@ -1,6 +1,6 @@
 // The projects one VibeDoc server manages: ~/.config/vibedoc/projects.json (XDG_CONFIG_HOME respected),
 // a list of repository roots that each hold a vibedoc.config.json.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { CONFIG_FILE } from "./config.ts";
@@ -21,9 +21,18 @@ function save(roots: string[]) {
   writeFileSync(registryFile(), `${JSON.stringify({ projects: roots }, null, 2)}\n`);
 }
 
+// The same folder can be reached through symlinks (macOS /var vs /private/var); register its real path.
+const canonical = (path: string) => {
+  try {
+    return realpathSync(resolve(path));
+  } catch {
+    return resolve(path);
+  }
+};
+
 // Returns false when it was already registered.
 export function addProject(path: string): boolean {
-  const root = resolve(path);
+  const root = canonical(path);
   if (!existsSync(join(root, CONFIG_FILE))) throw new Error(`${root} 里没有 ${CONFIG_FILE}，先在那里运行 vibedoc init。`);
   const roots = listProjects();
   if (roots.includes(root)) return false;
@@ -35,7 +44,7 @@ export function addProject(path: string): boolean {
 export function removeProject(pathOrId: string): string | null {
   const roots = listProjects();
   const ids = projectIds(roots);
-  const root = roots.find((r) => r === resolve(pathOrId)) ?? roots.find((r) => ids.get(r) === pathOrId) ?? null;
+  const root = roots.find((r) => r === canonical(pathOrId) || r === resolve(pathOrId)) ?? roots.find((r) => ids.get(r) === pathOrId) ?? null;
   if (root) save(roots.filter((r) => r !== root));
   return root;
 }

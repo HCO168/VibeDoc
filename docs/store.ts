@@ -52,13 +52,15 @@ export class DocSystem {
     }
     return out;
   }
-  newChangelog(role: string, slug: string): string {
+  // `body` replaces the empty section skeleton (the board sends what the user wrote).
+  newChangelog(role: string, slug: string, body = ""): string {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(role) || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error("角色和短名只能用小写字母、数字和连字符");
     const now = new Date();
     const rel = join(this.cfg.docs.changelogs, dateOf(now), `${timeOf(now)}_${role}_${slug}.md`);
     if (existsSync(this.abs(rel))) throw new Error(`${rel} 已存在`);
     const stamp = `${dateOf(now)} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${zone()}`.trim();
-    write(this.abs(rel), `## time: ${stamp} | role: ${role}\n\n### 变更内容\n\n- 用户要求：\n- \n\n### 影响范围\n\n- \n\n### 文档\n\n- \n\n### 验证\n\n- \n`);
+    const sections = body.trim() || "### 变更内容\n\n- 用户要求：\n- \n\n### 影响范围\n\n- \n\n### 文档\n\n- \n\n### 验证\n\n- ";
+    write(this.abs(rel), `## time: ${stamp} | role: ${role}\n\n${sections}\n`);
     return rel;
   }
 
@@ -203,11 +205,25 @@ export class DocSystem {
   }
   // The user's own request files: create or overwrite one under the requests directory.
   saveRequest(name: string, text: string): string {
+    return this.saveMarkdown(this.cfg.docs.requests, name, text, true);
+  }
+  // A Markdown file named by the user inside one document directory; `overwrite` false refuses an existing name.
+  saveMarkdown(dirRel: string, name: string, text: string, overwrite: boolean): string {
     const clean = name.trim().replace(/\.md$/, "");
     if (!/^[\p{L}\p{N}][\p{L}\p{N} _-]{0,80}$/u.test(clean)) throw new Error("文件名只能用文字、数字、空格、下划线和连字符");
-    const rel = join(this.cfg.docs.requests, `${clean}.md`);
+    if (!text.trim()) throw new Error("内容不能为空");
+    const rel = join(dirRel, `${clean}.md`);
+    if (!overwrite && existsSync(this.abs(rel))) throw Object.assign(new Error("同名文件已存在，换个名字"), { status: 409 });
     write(this.abs(rel), `${text.trim()}\n`);
     return rel;
+  }
+  // A `## 标题` section appended to the goals file.
+  addGoal(title: string, text: string) {
+    const clean = title.replace(/\s+/g, " ").trim();
+    if (!clean) throw new Error("标题不能为空");
+    const path = this.abs(this.cfg.docs.goals);
+    const current = read(path) || `# 目标记录\n`;
+    write(path, `${current.replace(/\n*$/, "")}\n\n## ${clean}\n\n${text.trim() || "- 目标："}\n`);
   }
   saveSketch(name: string, data: Buffer): string {
     const clean = name.trim().split(/[\\/]/).pop()!;

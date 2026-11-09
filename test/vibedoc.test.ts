@@ -287,3 +287,51 @@ test("registry: add and remove follow into the running server", async () => {
   for (let i = 0; i < 30 && (await api("GET", "/api/projects")).json.projects.some((p: any) => p.id === "gamma"); i++) await new Promise((r) => setTimeout(r, 100));
   assert.ok(!(await api("GET", "/api/projects")).json.projects.some((p: any) => p.id === "gamma"));
 });
+
+test("adding things: modules, plugins and documents from the board and the CLI", async () => {
+  // Module into modules.yaml (alpha): inserted first under modules:, and immediately known.
+  const mod = await api("POST", "/api/p/alpha/modules", { id: "billing", title: "计费: 账单", backend: ["backend/api/src/billing*"], schemas: ["billing"] });
+  assert.equal(mod.status, 201);
+  assert.match(read(join(A, "doc/modules/modules.yaml")), /^modules:\n  billing:\n    title: "计费 账单"|^modules:\n  billing:\n    title: "计费: 账单"/m);
+  assert.equal((await api("POST", "/api/p/alpha/modules", { id: "billing", title: "重复" })).status, 409);
+  assert.equal((await api("POST", "/api/p/alpha/modules", { id: "Bad-Id", title: "x" })).status, 400);
+  const projects = (await api("GET", "/api/projects")).json.projects;
+  assert.ok(projects.find((p: any) => p.id === "alpha").modules.some((m: any) => m.id === "billing"));
+  assert.equal((await api("POST", "/api/p/alpha/rules", { module: "billing", layer: "backend", title: "发票编号连续", body: "" })).status, 201);
+  // Module into the config's inline modules (beta) through the CLI.
+  assert.match(vibedoc(B, "module", "add", "search", "搜索").out, /vibedoc\.config\.json/);
+  assert.equal(JSON.parse(read(join(B, "vibedoc.config.json"))).modules.search, "搜索");
+  assert.equal((await api("POST", "/api/p/beta/modules", { id: "export", title: "导出" })).status, 201);
+  assert.ok((await api("GET", "/api/projects")).json.projects.find((p: any) => p.id === "beta").modules.some((m: any) => m.id === "export"));
+  // Plugins: registered once, outside paths refused.
+  write(join(B, "tools/p/plugin.ts"), 'export default { name: "p", commands: { ping: { describe: "ping", run() { console.log("pong"); } } } };\n');
+  assert.equal((await api("POST", "/api/p/beta/plugins", { path: "tools/p/plugin.ts" })).status, 201);
+  assert.equal((await api("POST", "/api/p/beta/plugins", { path: "tools/p/plugin.ts" })).status, 409);
+  assert.equal((await api("POST", "/api/p/beta/plugins", { path: "../outside.ts" })).status, 400);
+  assert.match(vibedoc(B, "ping").out, /pong/);
+  // Documents.
+  assert.equal((await api("POST", "/api/p/beta/docs/questions", { title: "要不要导出 CSV？", body: "" })).status, 201);
+  assert.match(read(join(B, "doc/human/open_questions.md")), /要不要导出 CSV？/);
+  assert.equal((await api("POST", "/api/p/beta/docs/goals", { title: "上线 1.0", text: "- 目标：发布" })).status, 201);
+  assert.match(read(join(B, "doc/goal_logs.md")), /## 上线 1\.0\n\n- 目标：发布/);
+  assert.equal((await api("POST", "/api/p/beta/docs/totest", { name: "export", text: "# 导出\n\n## 待验证行为" })).status, 201);
+  assert.equal((await api("POST", "/api/p/beta/docs/totest", { name: "export", text: "again" })).status, 409);
+  assert.equal((await api("POST", "/api/p/beta/docs/deliverables", { name: "manual", text: "# 手册" })).status, 201);
+  const log = await api("POST", "/api/p/beta/docs/changelogs", { role: "owner", slug: "plan", body: "### 变更内容\n\n- 定计划" });
+  assert.equal(log.status, 201);
+  assert.match(read(join(B, log.json.path)), /^## time: .* \| role: owner\n\n### 变更内容\n\n- 定计划/);
+  // Projects: a plain folder needs init, then appears; removing only unregisters.
+  const D = join(tmp, "delta");
+  mkdirSync(D, { recursive: true });
+  const needs = await api("POST", "/api/projects", { path: D });
+  assert.equal(needs.status, 409);
+  assert.equal(needs.json.needsInit, true);
+  const added = await api("POST", "/api/projects", { path: D, init: true, name: "Delta" });
+  assert.equal(added.status, 201);
+  assert.equal(added.json.id, "delta");
+  assert.ok(existsSync(join(D, "AGENTS.md")));
+  assert.ok((await api("GET", "/api/projects")).json.projects.some((p: any) => p.id === "delta"));
+  assert.equal((await api("DELETE", "/api/projects/delta")).status, 200);
+  assert.ok(!(await api("GET", "/api/projects")).json.projects.some((p: any) => p.id === "delta"));
+  assert.ok(existsSync(join(D, "vibedoc.config.json")));
+});

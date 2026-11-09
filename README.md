@@ -37,6 +37,8 @@
 - **代码地图**（需配置 `codemap`）：前端、API、后端、数据库、结构体五个标签，各按自己的方式分组；接口直接显示请求与响应字段；每行可「提要求」写规则，或在关系图中查看。「数据库」标签里可以「新建表」「改表」，表单旁实时显示 SQL 草稿。
 - **关系图**（需配置 `codemap`）：页面 → 接口（递归展开数据体）→ 处理函数调用链 → 读写的表；也可从任一接口、函数、结构体或表出发。
 
+**新增入口**：能新增的东西都有「＋」按钮——顶栏「＋ 项目」（已有 VibeDoc 的文件夹，或勾选后就地 `vibedoc init`）；规则看板、功能文档侧栏、新建规则／提新功能表单里的「＋ 新模块」（有 `modulesFile` 时写进 `modules.yaml` 并排在最前，可同时填代码路径；否则写进配置的 `modules`）；项目管理里的新增问题、待办、待验收、目标、变更日志、需求、草图、交付说明；「项目设置」里列出模块与插件，可新增模块、登记插件、增加或移除项目（移除只是不再显示，文件不动）。
+
 文件或代码变化时页面实时刷新。
 
 ## 安装
@@ -163,7 +165,8 @@ vibedoc question list | add "<问题>" [--body "<说明>"] | resolve <编号>
 vibedoc todo list | add <backlog|doing|testing> "<内容>"
 vibedoc totest list
 vibedoc agents sync | check
-vibedoc plugins                      # 本项目插件及其命令
+vibedoc plugins [add <路径>]          # 本项目插件及其命令，或登记一个插件
+vibedoc module add <编号> <名称> [--backend a,b] [--frontend a,b] [--schemas a,b]
 vibedoc codemap generate | fn <名称> | route <路径片段>
 ```
 
@@ -190,6 +193,7 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `tables/spec.ts` | 表变更条目的格式：字段表与约束的解析和写回、SQL 草稿、是否已在迁移中 |
 | `docs/store.ts`、`docs/cli.ts` | 变更日志、待决问题、待办、待验收、需求与草图的读写和命令 |
 | `plugins.ts` | 加载项目插件、插件规则 |
+| `configedit.ts` | 新增模块（`modules.yaml` 或配置）、登记插件 |
 | `test/vibedoc.test.ts` | 端到端测试 |
 | `codemap/` | 代码地图：Rust 词法扫描、迁移重放与 SQL 引用、前端 API 调用识别、serde 字段换算、YAML 子集解析、Markdown／JSON 输出 |
 | `mac/install.sh`、`mac/launch.sh`、`mac/icon.svg` | macOS 启动器 |

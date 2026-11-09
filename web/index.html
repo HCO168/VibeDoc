@@ -211,6 +211,7 @@ pre.ts { background: var(--panel); border: 1px solid var(--border); border-radiu
 <header>
   <h1>VibeDoc</h1>
   <select id="project" class="project-select" title="切换项目"></select>
+  <button id="add-project" class="small" title="增加项目">＋ 项目</button>
   <div class="tabs"><button data-view="board" class="on">规则看板</button><button data-view="map">代码地图</button><button data-view="graph">关系图</button><button data-view="features">功能文档</button><button data-view="manage">项目管理</button></div>
   <select id="module"><option value="">全部模块</option></select>
   <input id="search" type="search" placeholder="搜索" style="width:200px">
@@ -430,7 +431,8 @@ function dropZone(el, status) {
 function renderBoard() {
   const items = state.rules.filter((r) => (!state.module || r.module === state.module) && (!state.layer || r.layer === state.layer) && matches(r.title, r.body, r.id));
   const chips = h("div", { class: "chips" },
-    [["", "全部层"], ...Object.entries(LAYERS)].map(([k, v]) => h("button", { class: `chip ${state.layer === k ? "on" : ""}`, onclick: () => { state.layer = k; render(); } }, v)));
+    [["", "全部层"], ...Object.entries(LAYERS)].map(([k, v]) => h("button", { class: `chip ${state.layer === k ? "on" : ""}`, onclick: () => { state.layer = k; render(); } }, v)),
+    h("span", { style: "margin-left:auto" }, newModuleButton((id) => { state.module = id; document.getElementById("module").value = id; })));
   const board = h("div", { class: "board" }, COLUMNS.map(([key, name]) => {
     const list = items.filter((r) => r.effective === key);
     const col = h("div", { class: `col ${key}` }, h("h3", {}, h("span", { class: `st ${key}` }, name), h("span", { class: "n" }, list.length)),
@@ -504,6 +506,7 @@ function newRule(preset = {}) {
     h("h2", {}, "新建规则"),
     targetRow,
     h("label", {}, "模块"), module,
+    h("div", { style: "margin-top:6px" }, newModuleButton((id) => { module.append(h("option", { value: id }, `${modTitle(id)}（${id}）`)); module.value = id; module.dispatchEvent(new Event("change")); })),
     h("label", {}, "层"), layer,
     h("label", {}, "标题"), title,
     h("label", {}, "内容"), body,
@@ -653,7 +656,7 @@ function renderFeatures() {
     const pending = items.filter((f) => f.module === id && ["new", "modified", "confirm"].includes(f.effective)).length;
     return h("button", { class: `${id === state.feat.module && !state.feat.status ? "on" : ""} ${n ? "" : "dim"}`, title: n ? "" : "还没有功能文档", onclick: () => { state.feat.module = id; state.feat.status = ""; remember(`featModule:${PROJECT}`, id); render(); window.scrollTo(0, 0); } },
       h("span", {}, modTitle(id)), pending ? h("span", { class: "rulecount" }, pending) : null, h("span", { class: "c" }, n || ""));
-  }));
+  }), h("div", { style: "padding:6px 8px" }, newModuleButton((id) => { state.feat.module = id; state.feat.status = ""; })));
   let body;
   if (state.feat.status || (state.search && !editing)) {
     // A status (or a search) across all modules: what is live, persisted, in progress or waiting.
@@ -710,6 +713,7 @@ function newFeature() {
   const close = drawer([
     h("h2", {}, "提新功能"),
     h("label", {}, "模块"), module,
+    h("div", { style: "margin-top:6px" }, newModuleButton((id) => { module.append(h("option", { value: id }, `${modTitle(id)}（${id}）`)); module.value = id; module.dispatchEvent(new Event("change")); })),
     h("label", {}, "放在哪个分组"), section, list,
     h("label", {}, "功能名"), title,
     h("label", {}, "描述"), body,
@@ -918,10 +922,89 @@ function openTable(opts = {}) {
   setTimeout(() => (item || spec0.name ? comment : spec0.schema ? name : schema).focus(), 30);
 }
 
+// ---------- adding things ----------
+// A "＋ label" button that opens an inline form; `fields` are [name, label, kind ("text"|"textarea"|"select"), extra].
+// `submit(values)` returns a promise; on success the form closes and `done(result)` runs.
+function addForm(key, label, fields, submit, done) {
+  const m = state.manage;
+  if (m.adding !== key) return h("div", { class: "doc-bar" }, h("button", { class: "small", onclick: () => { m.adding = key; render(); } }, `＋ ${label}`));
+  const inputs = {};
+  const rows = fields.map(([name, text, kind = "text", extra = {}]) => {
+    const el = kind === "textarea" ? h("textarea", { placeholder: extra.placeholder || "" }, extra.value || "")
+      : kind === "select" ? h("select", {}, extra.options.map(([v, t]) => h("option", { value: v }, t)))
+      : h("input", { type: "text", placeholder: extra.placeholder || "", value: extra.value || "" });
+    inputs[name] = el;
+    return h("label", { class: "empty", style: "display:grid;gap:4px" }, text, el);
+  });
+  const err = h("div", { class: "err" });
+  return h("div", { class: "manage-form add-form" }, h("strong", {}, label), rows, err, h("div", { class: "doc-bar" },
+    h("button", { class: "primary small", onclick: async () => {
+      const values = Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value]));
+      try { const r = await submit(values); m.adding = null; done?.(r); render(); } catch (e) { err.textContent = e.message; }
+    } }, "保存"),
+    h("button", { class: "small", onclick: () => { m.adding = null; render(); } }, "取消")));
+}
+// New module: written to the project's modules.yaml (first in the list) or to the config's inline modules.
+function openNewModule(after) {
+  const id = h("input", { type: "text", placeholder: "例如 billing（小写字母、数字、下划线）" });
+  const title = h("input", { type: "text", placeholder: "例如 计费" });
+  const backend = h("textarea", { placeholder: "可选，每行一个，例如 backend/api/src/billing*", style: "min-height:60px" });
+  const frontend = h("textarea", { placeholder: "可选，每行一个，例如 frontend/src/pages/billing/**", style: "min-height:60px" });
+  const schemas = h("input", { type: "text", placeholder: "可选，逗号分隔，例如 billing" });
+  const err = h("div", { class: "err" });
+  const lines = (el) => el.value.split(/[\n,，]/).map((x) => x.trim()).filter(Boolean);
+  const close = drawer([
+    h("h2", {}, "新模块"),
+    h("div", { class: "note" }, CONFIG.modulesFile ? `写入 ${CONFIG.modulesFile}，放在模块清单最前面，所以这里填的代码路径优先于下面的兜底模块。` : "写入 vibedoc.config.json 的 modules。"),
+    h("label", {}, "模块编号"), id, h("label", {}, "名称"), title,
+    CONFIG.modulesFile ? [h("label", {}, "后端文件（代码地图归属用）"), backend, h("label", {}, "前端文件"), frontend, h("label", {}, "数据库 schema"), schemas] : null,
+    err,
+    h("div", { class: "bar" }, h("button", { class: "primary", onclick: async () => {
+      try {
+        await api("POST", "/api/modules", { id: id.value, title: title.value, backend: lines(backend), frontend: lines(frontend), schemas: lines(schemas) });
+        close();
+        await Promise.all([loadCode(), loadProjects(false)]);
+        toast(`已新增模块 ${title.value}`);
+        after?.(id.value.trim());
+        render();
+      } catch (e) { err.textContent = e.message; }
+    } }, "保存")),
+  ]);
+  setTimeout(() => id.focus(), 30);
+}
+const newModuleButton = (after) => h("button", { class: "small", onclick: () => openNewModule(after) }, "＋ 新模块");
+// New project: a folder that already has vibedoc.config.json, or any folder initialized on the spot.
+function openAddProject() {
+  const path = h("input", { type: "text", placeholder: "仓库文件夹的完整路径，例如 ~/Documents/GitHub/my-app" });
+  const name = h("input", { type: "text", placeholder: "项目名（新初始化时使用，可留空）" });
+  const init = h("input", { type: "checkbox" });
+  const err = h("div", { class: "err" });
+  const close = drawer([
+    h("h2", {}, "增加项目"),
+    h("label", {}, "文件夹"), path, h("label", {}, "名称"), name,
+    h("label", { style: "display:flex;gap:6px;align-items:center" }, init, "文件夹里还没有 VibeDoc 时，就地运行 vibedoc init 初始化"),
+    err,
+    h("div", { class: "bar" }, h("button", { class: "primary", onclick: async () => {
+      try {
+        const r = await api("POST", "/api/projects", { path: path.value, name: name.value, init: init.checked });
+        close();
+        await loadProjects(false);
+        if (r.id) selectProject(r.id);
+        toast("已增加项目");
+      } catch (e) {
+        err.textContent = /vibedoc\.config\.json/.test(e.message) ? `${e.message}。勾选下面的选项即可就地初始化。` : e.message;
+      }
+    } }, "增加")),
+    h("div", { class: "note" }, "项目列表在 ~/.config/vibedoc/projects.json；在仓库里运行 vibedoc init 或 vibedoc add 也会出现在这里。"),
+  ]);
+  setTimeout(() => path.focus(), 30);
+}
+document.getElementById("add-project").addEventListener("click", openAddProject);
+
 // ---------- project documents (项目管理) ----------
 const MANAGE_SECTIONS = [
   ["questions", "待决问题"], ["todo", "待办"], ["totest", "待验收"], ["goals", "目标记录"], ["changelogs", "变更日志"],
-  ["requests", "需求原话"], ["sketches", "UI 草图"], ["deliverables", "交付说明"], ["index", "文档入口"],
+  ["requests", "需求原话"], ["sketches", "UI 草图"], ["deliverables", "交付说明"], ["index", "文档入口"], ["settings", "项目设置"],
 ];
 // Typing into a form in this view: live updates wait so the input is not replaced.
 const manageBusy = () => !!document.activeElement?.closest?.(".manage-panel, .plugin-panel") && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
@@ -957,6 +1040,7 @@ function renderManage() {
   if (m.section === "questions") {
     body = [
       h("div", { class: "empty" }, "AI 遇到需要你拍板的问题记在 ", h("code", { class: "mono" }, p.questions), "。直接在下面回答；AI 收到答复后把结论写进行为文档，再删除这一条。"),
+      addForm("question", "新增问题", [["title", "问题"], ["body", "说明（可选）", "textarea"]], (v) => api("POST", "/api/docs/questions", { title: v.title, body: v.body })),
       ...(d.questions.length ? d.questions.map((q) => {
         const box = h("textarea", { placeholder: "你的决定或补充说明" });
         const err = h("div", { class: "err" });
@@ -981,17 +1065,25 @@ function renderManage() {
       ...d.todo.flatMap((s) => [h("div", { class: "feat-sec" }, `${s.name}（${s.items.length}）`), s.items.length ? h("ul", { class: "doc" }, s.items.map((i) => h("li", {}, mdInline(i)))) : h("div", { class: "empty" }, "无")]),
     ];
   } else if (m.section === "totest") {
-    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.totest), "：延后的人工验收交接，按功能分文件。"), ...fileBrowser(d.totest, "没有待验收的交接。")];
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.totest), "：延后的人工验收交接，按功能分文件。"),
+      addForm("totest", "新增待验收", [["name", "文件名（按功能，例如 login）"], ["text", "内容", "textarea", { value: "# 标题\n\n## 待验证行为\n\n## 环境\n\n## 已执行的检查\n\n## 阻塞条件\n\n## 验证步骤\n" }]],
+        (v) => api("POST", "/api/docs/totest", v), (r) => openDocFile(r.path)),
+      ...fileBrowser(d.totest, "没有待验收的交接。")];
   } else if (m.section === "goals" || m.section === "index") {
     const path = m.section === "goals" ? p.goals : `${p.root}/README.md`;
     if (m.file !== path) setTimeout(() => openDocFile(path), 0);
     body = [h("div", { class: "empty" }, h("code", { class: "mono" }, path), m.section === "goals" ? "：跨多个回合的目标、范围和待定决策。" : "：文档总入口。"),
+      m.section === "goals" ? addForm("goal", "新增目标", [["title", "目标"], ["text", "内容", "textarea", { value: "- 目标：\n- 范围：\n- 非目标：\n- 状态：\n- 未决问题：" }]],
+        (v) => api("POST", "/api/docs/goals", v), () => { m.file = null; }) : null,
       h("div", { class: "doc" }, mdBlocks(m.file === path ? m.text : "", (t) => h("h4", { class: "doc-h3" }, mdInline(t))))];
   } else if (m.section === "changelogs") {
     if (!m.changelogs) { m.changelogs = []; getJson("/docs/changelogs").then((r) => { m.changelogs = r.items; render(); }); }
     const list = m.changelogs.filter((c) => matches(c.slug, c.role, c.title, c.date));
     const days = [...new Set(list.map((c) => c.date))];
     body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.changelogs), `：最近 ${m.changelogs.length} 条，点一条展开。上方搜索框可按短名、角色和内容筛选。`),
+      addForm("changelog", "新建变更日志", [["role", "角色（英文，例如 product-owner）"], ["slug", "英文短名（例如 pricing-update）"],
+        ["body", "内容", "textarea", { value: "### 变更内容\n\n- 用户要求：\n- \n\n### 影响范围\n\n- \n\n### 文档\n\n- \n\n### 验证\n\n- " }]],
+        (v) => api("POST", "/api/docs/changelogs", v), (r) => { m.changelogs = null; m.open.add(r.path); }),
       ...days.flatMap((day) => [h("div", { class: "cl-day" }, day), ...list.filter((c) => c.date === day).map((c) => {
         const open = m.open.has(c.path);
         return h("div", {}, h("div", { class: "cl-row", onclick: async () => {
@@ -1036,7 +1128,31 @@ function renderManage() {
         : h("div", { class: "empty" }, "还没有草图。"),
       m.file && d.sketches.some((f) => f.path === m.file) ? h("div", { class: "doc", style: "margin-top:12px" }, mdBlocks(m.text, (t) => h("h4", {}, t))) : null];
   } else if (m.section === "deliverables") {
-    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.deliverables), "：给人读的交付说明。"), ...fileBrowser(d.deliverables, "还没有交付说明。")];
+    body = [h("div", { class: "empty" }, h("code", { class: "mono" }, p.deliverables), "：给人读的交付说明。"),
+      addForm("deliverable", "新建交付说明", [["name", "文件名（例如 user_manual）"], ["text", "内容", "textarea", { placeholder: "# 标题" }]],
+        (v) => api("POST", "/api/docs/deliverables", v), (r) => openDocFile(r.path)),
+      ...fileBrowser(d.deliverables, "还没有交付说明。")];
+  } else if (m.section === "settings") {
+    const plugins = CONFIG.plugins || [];
+    body = [
+      h("h2", { style: "margin:0 0 8px;font-size:17px" }, `${CONFIG.name}`),
+      h("div", { class: "empty" }, "仓库：", h("code", { class: "mono" }, CONFIG.root), "　配置：", h("code", { class: "mono" }, "vibedoc.config.json")),
+      h("div", { class: "feat-sec" }, `模块（${(CONFIG.modules || []).length}）`),
+      h("div", { class: "empty" }, CONFIG.modulesFile ? ["来自 ", h("code", { class: "mono" }, CONFIG.modulesFile)] : "来自 vibedoc.config.json 的 modules"),
+      h("div", { class: "chips" }, (CONFIG.modules || []).map((x) => h("span", { class: "chip", title: x.id }, `${x.title}（${x.id}）`))),
+      h("div", { class: "doc-bar" }, newModuleButton()),
+      h("div", { class: "feat-sec" }, `插件（${plugins.length}）`),
+      plugins.length ? h("ul", { class: "doc" }, plugins.map((x, i) => h("li", {}, h("strong", {}, x.title), " ", h("code", { class: "mono" }, CONFIG.pluginPaths?.[i] || x.name), x.view ? "　有看板页" : ""))) : h("div", { class: "empty" }, "还没有插件。"),
+      CONFIG.pluginErrors?.length ? h("div", { class: "err" }, CONFIG.pluginErrors.join("；")) : null,
+      addForm("plugin", "添加插件", [["path", "插件文件（相对仓库，例如 tools/vibedoc-plugins/x/plugin.ts）"]], (v) => api("POST", "/api/plugins", v), () => toast("已登记插件；AI 规则有变化时运行 vibedoc agents sync")),
+      h("div", { class: "feat-sec" }, "项目"),
+      h("div", { class: "doc-bar" },
+        h("button", { class: "small", onclick: openAddProject }, "＋ 增加项目"),
+        h("button", { class: "small", onclick: async () => {
+          if (!confirm(`从 VibeDoc 的项目列表里移除「${CONFIG.name}」？仓库里的文件不受影响。`)) return;
+          try { await api("DELETE", `/api/projects/${PROJECT}`); PROJECT = ""; await loadProjects(true); toast("已移除"); } catch (e) { toast(e.message); }
+        } }, "移除当前项目")),
+    ];
   }
   return [h("div", { class: "map" }, side, h("div", { class: "panel manage-panel" }, pluginWarn, warn, ...body))];
 }

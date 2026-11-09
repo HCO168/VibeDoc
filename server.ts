@@ -5,12 +5,13 @@
 // Port: PORT, else the `port` of the repository it runs in, else 4870. Listens on loopback only; writes need
 // the per-start token embedded in the served page. Per-project API lives under /api/p/<project id>/.
 import { createServer, type IncomingMessage } from "node:http";
-import { existsSync, readFileSync, watch } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync, realpathSync, watch } from "node:fs";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { CONFIG_FILE, findRoot, loadConfig } from "./config.ts";
-import { addProject, listProjects, projectIds, registryFile } from "./registry.ts";
+import { addProject, listProjects, projectIds, registryFile, removeProject } from "./registry.ts";
+import { spawnSync } from "node:child_process";
 import { Project, send } from "./project.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -93,6 +94,34 @@ const server = createServer(async (req, res) => {
       console.log("VibeDoc: 收到停止请求，退出");
       setTimeout(() => process.exit(0), 100);
       return;
+    }
+    // Adding a project from the board: an existing VibeDoc repository, or (with `init`) any folder,
+    // which gets `vibedoc init` first. Removing only unregisters; files stay.
+    if (req.method === "POST" && url.pathname === "/api/projects") {
+      if (only) return send(res, 409, { error: "只服务单个仓库时不能增加项目" });
+      const data = JSON.parse((await readBody(req, 64 * 1024)).toString("utf8") || "{}");
+      const dir = resolve(String(data.path ?? "").trim().replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
+      if (!String(data.path ?? "").trim() || !existsSync(dir)) return send(res, 400, { error: "文件夹不存在" });
+      if (!existsSync(join(dir, CONFIG_FILE))) {
+        if (!data.init) return send(res, 409, { error: "这个文件夹还没有 vibedoc.config.json", needsInit: true });
+        const args = [join(here, "vibedoc.ts"), "init", ...(data.name ? ["--name", String(data.name)] : [])];
+        const r = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8" });
+        if (r.status !== 0) return send(res, 400, { error: `初始化失败：${(r.stderr || r.stdout).trim()}` });
+      }
+      addProject(dir);
+      loadProjects();
+      const roots = listProjects();
+      const ids = projectIds(roots);
+      return send(res, 201, { id: ids.get(roots.find((r) => r === dir || r === realpathSync(dir)) ?? dir) });
+    }
+    const removing = /^\/api\/projects\/([a-z0-9-]+)$/.exec(url.pathname);
+    if (req.method === "DELETE" && removing) {
+      if (only) return send(res, 409, { error: "只服务单个仓库时不能移除项目" });
+      const p = projects.get(removing[1]);
+      if (!p) return send(res, 404, { error: "没有这个项目" });
+      removeProject(p.root);
+      loadProjects();
+      return send(res, 200, { success: true });
     }
     const scoped = /^\/api\/p\/([a-z0-9-]+)(\/.*)$/.exec(url.pathname);
     if (scoped) {

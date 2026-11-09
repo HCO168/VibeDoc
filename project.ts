@@ -11,6 +11,7 @@ import { DocSystem } from "./docs/store.ts";
 import { syncAgents } from "./agents.ts";
 import { loadConfig, type Config } from "./config.ts";
 import { loadPlugins, pluginContext, pluginRules, type LoadedPlugin } from "./plugins.ts";
+import { addModule, addPlugin } from "./configedit.ts";
 
 export const send = (res: ServerResponse, status: number, data: unknown, type = "application/json; charset=utf-8") => {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -111,6 +112,9 @@ export class Project {
       migrationsDir: c.codemap?.migrationsDir ?? null, codemap: !!c.codemap, docs: c.docs,
       agents: syncAgents(this.root, c, false, pluginRules(this.plugins)).filter((r) => r.state !== "unchanged").map((r) => r.file),
       plugins: this.plugins.map(({ plugin }) => ({ name: plugin.name, title: plugin.title ?? plugin.name, view: !!plugin.client })),
+      pluginPaths: c.plugins,
+      modulesFile: c.modulesFile,
+      modules: [...this.titles()].map(([id, title]) => ({ id, title })),
       pluginErrors: this.pluginErrors,
     };
   }
@@ -158,7 +162,10 @@ export class Project {
       this.docs = new DocSystem(this.root, this.cfg);
       this.rules.titles = this.features.titles = this.titles();
       this.ready = this.loadPlugins();
-      this.ready.then(() => this.emit("code"));
+      this.ready.then(() => {
+        this.emit("code");
+        this.emit("projects");
+      });
     }, 800);
     // Watch a directory, or (until it exists) its nearest existing ancestor filtered to paths inside it.
     const watchPath = (rel: string, cb: (file: string) => void) => {
@@ -238,7 +245,32 @@ export class Project {
       this.emit(event);
       send(res, status, body);
     };
+    // ---------- project setup ----------
+    if (req.method === "POST" && path === "/modules") {
+      const file = addModule(this.root, this.cfg, data);
+      this.cfg = loadConfig(this.root);
+      this.docs = new DocSystem(this.root, this.cfg);
+      this.codemap = null;
+      this.rules.titles = this.features.titles = this.titles();
+      this.emit("projects");
+      return done("code", 201, { file });
+    }
+    if (req.method === "POST" && path === "/plugins") {
+      const file = addPlugin(this.root, String(data.path ?? ""));
+      this.cfg = loadConfig(this.root);
+      this.ready = this.loadPlugins();
+      this.ready.then(() => this.emit("projects"));
+      return send(res, 201, { file });
+    }
     // ---------- documents ----------
+    if (req.method === "POST" && path === "/docs/questions") return done("docs", 201, { n: docs.addQuestion(String(data.title ?? ""), String(data.body ?? "")) });
+    if (req.method === "POST" && path === "/docs/goals") {
+      docs.addGoal(String(data.title ?? ""), String(data.text ?? ""));
+      return done("docs", 201, { path: this.cfg.docs.goals });
+    }
+    if (req.method === "POST" && path === "/docs/totest") return done("docs", 201, { path: docs.saveMarkdown(this.cfg.docs.totest, String(data.name ?? ""), String(data.text ?? ""), false) });
+    if (req.method === "POST" && path === "/docs/deliverables") return done("docs", 201, { path: docs.saveMarkdown(this.cfg.docs.deliverables, String(data.name ?? ""), String(data.text ?? ""), false) });
+    if (req.method === "POST" && path === "/docs/changelogs") return done("docs", 201, { path: docs.newChangelog(String(data.role ?? ""), String(data.slug ?? ""), String(data.body ?? "")) });
     const answer = /^\/docs\/questions\/(\d+)\/answer$/.exec(path);
     if (req.method === "POST" && answer) {
       docs.answerQuestion(Number(answer[1]), String(data.answer ?? ""));

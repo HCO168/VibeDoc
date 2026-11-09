@@ -5,7 +5,8 @@
 //   vibedoc rules|features|tables <命令>                   status commands for rules, feature documents and table requests
 //   vibedoc changelog|question|todo|totest|agents <命令>   document system commands (see docs/cli.ts)
 //   vibedoc codemap <命令>           code map generation and queries (needs `codemap` in the config)
-//   vibedoc plugins                 the project's plugins and their commands; vibedoc <插件命令> runs one
+//   vibedoc plugins [add <路径>]     the project's plugins and their commands, or register one; vibedoc <插件命令> runs one
+//   vibedoc module add <编号> <名称> [--backend a,b] [--frontend a,b] [--schemas a,b]   add a module
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,7 @@ import { CONFIG_FILE, findRoot, loadConfig, type Config } from "./config.ts";
 import { renderTemplate, syncAgents, templateVars } from "./agents.ts";
 import { addProject, listProjects, projectIds, removeProject } from "./registry.ts";
 import { loadPlugins, pluginContext, pluginRules } from "./plugins.ts";
+import { addModule, addPlugin } from "./configedit.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
@@ -101,8 +103,30 @@ async function pluginCommand(name: string | undefined): Promise<boolean> {
   return false;
 }
 
+const option = (name: string) => {
+  const i = rest.indexOf(name);
+  return i >= 0 ? (rest[i + 1] ?? "").split(",").map((x) => x.trim()).filter(Boolean) : [];
+};
+
 if (command === "init") {
   await init();
+} else if (command === "module" && rest[0] === "add") {
+  try {
+    const root = findRoot();
+    const [id, ...title] = rest.slice(1).filter((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--")));
+    const file = addModule(root, loadConfig(root), { id: id ?? "", title: title.join(" "), backend: option("--backend"), frontend: option("--frontend"), schemas: option("--schemas") });
+    console.log(`已新增模块 ${id}：${file}`);
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
+} else if (command === "plugins" && rest[0] === "add") {
+  try {
+    console.log(`已登记插件：${addPlugin(findRoot(), rest[1] ?? "")}；运行 vibedoc agents sync 更新 AI 规则`);
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
 } else if (command === "add") {
   const root = rest[0] ?? findRoot();
   console.log(addProject(root) ? `已加入：${root}` : `已在列表中：${root}`);
@@ -121,6 +145,6 @@ if (command === "init") {
   process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
   await import(join(here, SUBCOMMANDS[command]));
 } else if (!(await pluginCommand(command))) {
-  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | plugins | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
+  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | module add | plugins [add] | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
   process.exitCode = command ? 1 : 0;
 }

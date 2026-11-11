@@ -13,6 +13,8 @@ import { CONFIG_FILE, findRoot, loadConfig } from "./config.ts";
 import { addProject, listProjects, projectIds, registryFile, removeProject } from "./registry.ts";
 import { spawnSync } from "node:child_process";
 import { Project, send } from "./project.ts";
+import { loadCatalog } from "./catalog.ts";
+import { skillDir } from "./skill.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const only = process.argv.includes("--only");
@@ -80,6 +82,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/health") {
       return send(res, 200, { app: "vibedoc", mode: only ? "only" : "registry", root: cwdRoot, roots: [...projects.values()].map((p) => p.root), pid: process.pid });
     }
+    if (req.method === "GET" && url.pathname === "/api/module-catalog") return send(res, 200, { groups: loadCatalog(), skill: skillDir() });
     if (req.method === "GET" && url.pathname === "/api/projects") {
       await Promise.all([...projects.values()].map((p) => p.ready));
       return send(res, 200, { projects: [...projects.values()].map((p) => p.info()), mode: only ? "only" : "registry" });
@@ -104,7 +107,8 @@ const server = createServer(async (req, res) => {
       if (!String(data.path ?? "").trim() || !existsSync(dir)) return send(res, 400, { error: "文件夹不存在" });
       if (!existsSync(join(dir, CONFIG_FILE))) {
         if (!data.init) return send(res, 409, { error: "这个文件夹还没有 vibedoc.config.json", needsInit: true });
-        const args = [join(here, "vibedoc.ts"), "init", ...(data.name ? ["--name", String(data.name)] : [])];
+        const modules = Array.isArray(data.modules) ? data.modules.map(String).filter((m: string) => /^[a-z][a-z0-9_]*$/.test(m)) : [];
+        const args = [join(here, "vibedoc.ts"), "init", ...(data.name ? ["--name", String(data.name)] : []), ...(modules.length ? ["--modules", modules.join(",")] : []), ...(data.features ? ["--features"] : [])];
         const r = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8" });
         if (r.status !== 0) return send(res, 400, { error: `初始化失败：${(r.stderr || r.stdout).trim()}` });
       }

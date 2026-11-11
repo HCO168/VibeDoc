@@ -1,5 +1,7 @@
 // VibeDoc command line. Run inside the repository it manages (or set VIBEDOC_REPO).
-//   vibedoc init [--name <名称>]     create vibedoc.config.json, the document tree, CLAUDE.md and the AGENTS.md rule blocks
+//   vibedoc init [--name <名称>] [--modules auth,profile] [--features]
+//                                   create vibedoc.config.json, the document tree, CLAUDE.md and the AGENTS.md rule blocks,
+//                                   starting from standard modules (with --features also their feature document drafts)
 //   vibedoc serve [--only]          start the board for every registered project (--only: just this repository)
 //   vibedoc add [路径] | remove <路径或编号> | projects    manage the projects the board shows
 //   vibedoc rules|features|tables <命令>                   status commands for rules, feature documents and table requests
@@ -7,6 +9,9 @@
 //   vibedoc codemap <命令>           code map generation and queries (needs `codemap` in the config)
 //   vibedoc plugins [add <路径>]     the project's plugins and their commands, or register one; vibedoc <插件命令> runs one
 //   vibedoc module add <编号> <名称> [--backend a,b] [--frontend a,b] [--schemas a,b]   add a module
+//   vibedoc module add --standard auth,profile [--features]   add standard modules; vibedoc module catalog lists them
+//   vibedoc plugins new <名称> [--title 标签] [--view]          scaffold a plugin under tools/vibedoc-plugins and register it
+//   vibedoc skill install [--claude|--codex|--project] | path  install the AI skill for building plugins
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +20,8 @@ import { renderTemplate, syncAgents, templateVars } from "./agents.ts";
 import { addProject, listProjects, projectIds, removeProject } from "./registry.ts";
 import { loadPlugins, pluginContext, pluginRules } from "./plugins.ts";
 import { addModule, addPlugin } from "./configedit.ts";
+import { applyStandardModules, loadCatalog } from "./catalog.ts";
+import { installSkill, scaffoldPlugin, skillDir } from "./skill.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
@@ -54,9 +61,14 @@ async function init() {
   if (existsSync(file)) {
     console.log(`${CONFIG_FILE} 已存在，未改动。`);
   } else {
-    const config = { name, port: 4870, language: "简体中文", modules: { app: name }, git: { promotion: ["dev", "main"], branchPrefix: "codex/" } };
+    // With standard modules chosen the project starts from those instead of a single "app" module.
+    const config = { name, port: 4870, language: "简体中文", modules: option("--modules").length ? {} : { app: name }, git: { promotion: ["dev", "main"], branchPrefix: "codex/" } };
     writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
     console.log(`已创建 ${CONFIG_FILE}`);
+  }
+  if (option("--modules").length) {
+    const added = applyStandardModules(root, loadConfig(root), option("--modules"), rest.includes("--features"));
+    if (added.length) console.log(`已加入标准模块：${added.join("、")}`);
   }
   const cfg = loadConfig(root);
   const vars = templateVars(cfg);
@@ -110,6 +122,39 @@ const option = (name: string) => {
 
 if (command === "init") {
   await init();
+} else if (command === "module" && rest[0] === "catalog") {
+  for (const g of loadCatalog()) {
+    console.log(`## ${g.title}`);
+    for (const m of g.modules) console.log(`  ${m.id.padEnd(14)} ${m.title}　${m.description}`);
+  }
+} else if (command === "module" && rest[0] === "add" && rest.includes("--standard")) {
+  try {
+    const root = findRoot();
+    const added = applyStandardModules(root, loadConfig(root), option("--standard"), rest.includes("--features"));
+    console.log(added.length ? `已新增标准模块：${added.join("、")}` : "这些模块都已存在");
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
+} else if (command === "plugins" && rest[0] === "new") {
+  try {
+    const i = rest.indexOf("--title");
+    const files = scaffoldPlugin(findRoot(), rest[1] ?? "", i >= 0 ? rest[i + 1] : undefined, rest.includes("--view"));
+    console.log(`已创建并登记插件：\n  ${files.join("\n  ")}\n下一步：编辑 plugin.ts，用 vibedoc plugins 检查，改了 rules 后运行 vibedoc agents sync。写法见 ${skillDir()}/SKILL.md`);
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
+} else if (command === "skill" && rest[0] === "path") {
+  console.log(skillDir());
+} else if (command === "skill" && rest[0] === "install") {
+  try {
+    const target = rest.includes("--codex") ? "codex" : rest.includes("--project") ? "project" : "claude";
+    console.log(`已安装：${installSkill(target)}`);
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
 } else if (command === "module" && rest[0] === "add") {
   try {
     const root = findRoot();
@@ -145,6 +190,6 @@ if (command === "init") {
   process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
   await import(join(here, SUBCOMMANDS[command]));
 } else if (!(await pluginCommand(command))) {
-  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | module add | plugins [add] | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
+  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | module add|catalog | plugins [add|new] | skill install|path | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
   process.exitCode = command ? 1 : 0;
 }

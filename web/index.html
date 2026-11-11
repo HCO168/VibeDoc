@@ -92,6 +92,11 @@ main { padding: 14px 16px 40px; }
 .sketch-grid .cap { font-size: 11px; padding: 4px 6px; color: var(--muted); word-break: break-all; }
 .file-list .f { padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .file-list .f.on, .file-list .f:hover { background: var(--accent-bg); }
+.module-picker .grp-h { margin: 8px 0 4px; }
+.picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+.pick { display: flex; gap: 6px; align-items: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
+.pick:hover { border-color: var(--accent); }
+.ai-box { margin-top: 14px; border: 1px dashed var(--accent); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
 .manage-form { display: grid; gap: 6px; margin: 8px 0 14px; max-width: 760px; }
 .warn-box { border: 1px solid var(--modified); background: var(--modified-bg); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
 .doc-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
@@ -278,7 +283,8 @@ const toast = (msg) => {
 };
 async function api(method, path, data) {
   // Per-project calls are written as "/api/..." and sent to the selected project.
-  if (path.startsWith("/api/") && path !== "/api/shutdown") path = P(path.slice(4));
+  // Global endpoints (projects, shutdown, the module catalog) are not per project.
+  if (path.startsWith("/api/") && !/^\/api\/(shutdown|projects|module-catalog)(\/|$)/.test(path)) path = P(path.slice(4));
   const res = await fetch(path, { method, headers: { "Content-Type": "application/json", "X-Board-Token": TOKEN }, body: data ? JSON.stringify(data) : undefined });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `请求失败（${res.status}）`);
@@ -944,6 +950,22 @@ function addForm(key, label, fields, submit, done) {
     } }, "保存"),
     h("button", { class: "small", onclick: () => { m.adding = null; render(); } }, "取消")));
 }
+// Standard modules (templates/modules/catalog.json), fetched once.
+let CATALOG = null;
+const loadCatalog = async () => (CATALOG ??= await (await fetch("/api/module-catalog")).json());
+// Checkbox grid of standard modules; `taken` ids are shown checked and locked.
+function modulePicker(groups, taken = new Set()) {
+  const picked = new Set();
+  const el = h("div", { class: "module-picker" }, groups.map((g) => h("div", {},
+    h("div", { class: "grp-h" }, g.title),
+    h("div", { class: "picker-grid" }, g.modules.map((m) => {
+      const box = h("input", { type: "checkbox", checked: taken.has(m.id) || null, disabled: taken.has(m.id) || null });
+      box.addEventListener("change", () => (box.checked ? picked.add(m.id) : picked.delete(m.id)));
+      return h("label", { class: "pick", title: `${m.description}\n常见功能：${m.features.map((f) => f.title).join("、")}` }, box, h("span", {}, h("strong", {}, m.title), h("span", { class: "fid mono" }, ` ${m.id}`), h("div", { class: "fid" }, m.description)));
+    })))));
+  return { el, picked };
+}
+
 // New module: written to the project's modules.yaml (first in the list) or to the config's inline modules.
 function openNewModule(after) {
   const id = h("input", { type: "text", placeholder: "例如 billing（小写字母、数字、下划线）" });
@@ -953,8 +975,29 @@ function openNewModule(after) {
   const schemas = h("input", { type: "text", placeholder: "可选，逗号分隔，例如 billing" });
   const err = h("div", { class: "err" });
   const lines = (el) => el.value.split(/[\n,，]/).map((x) => x.trim()).filter(Boolean);
+  const standard = h("div", { class: "empty" }, "加载标准模块…");
+  const draft = h("input", { type: "checkbox", checked: true });
+  loadCatalog().then((cat) => {
+    const { el, picked } = modulePicker(cat.groups, new Set((CONFIG.modules || []).map((m) => m.id)));
+    const err2 = h("div", { class: "err" });
+    standard.replaceChildren(el, h("label", { style: "display:flex;gap:6px;align-items:center;margin-top:8px" }, draft, "同时生成这些模块的功能文档草稿（常见功能，状态为「新提出」，可改可删）"), err2,
+      h("div", { class: "bar" }, h("button", { class: "primary", onclick: async () => {
+        if (!picked.size) { err2.textContent = "先勾选要加的模块"; return; }
+        try {
+          await api("POST", "/api/modules", { standard: [...picked], features: draft.checked });
+          close();
+          await Promise.all([loadCode(), loadFeatures(), loadProjects(false)]);
+          toast(`已加入 ${picked.size} 个标准模块`);
+          after?.([...picked][0]);
+          render();
+        } catch (e) { err2.textContent = e.message; }
+      } }, "加入勾选的标准模块")));
+  });
   const close = drawer([
     h("h2", {}, "新模块"),
+    h("div", { class: "feat-sec" }, "从标准模块中选"),
+    standard,
+    h("div", { class: "feat-sec" }, "或者自己定义"),
     h("div", { class: "note" }, CONFIG.modulesFile ? `写入 ${CONFIG.modulesFile}，放在模块清单最前面，所以这里填的代码路径优先于下面的兜底模块。` : "写入 vibedoc.config.json 的 modules。"),
     h("label", {}, "模块编号"), id, h("label", {}, "名称"), title,
     CONFIG.modulesFile ? [h("label", {}, "后端文件（代码地图归属用）"), backend, h("label", {}, "前端文件"), frontend, h("label", {}, "数据库 schema"), schemas] : null,
@@ -974,25 +1017,34 @@ function openNewModule(after) {
 }
 const newModuleButton = (after) => h("button", { class: "small", onclick: () => openNewModule(after) }, "＋ 新模块");
 // New project: a folder that already has vibedoc.config.json, or any folder initialized on the spot.
-function openAddProject() {
-  const path = h("input", { type: "text", placeholder: "仓库文件夹的完整路径，例如 ~/Documents/GitHub/my-app" });
+function openAddProject(prefill = "") {
+  const path = h("input", { type: "text", placeholder: "仓库文件夹的完整路径，例如 ~/Documents/GitHub/my-app", value: prefill });
   const name = h("input", { type: "text", placeholder: "项目名（新初始化时使用，可留空）" });
   const init = h("input", { type: "checkbox" });
   const err = h("div", { class: "err" });
+  const draft = h("input", { type: "checkbox" });
+  let picker = { picked: new Set() };
+  const modules = h("div", { class: "empty" }, "加载标准模块…");
+  const moduleBox = h("div", { style: "display:none" }, h("div", { class: "feat-sec" }, "预选模块（可不选，之后也能再加）"), modules,
+    h("label", { style: "display:flex;gap:6px;align-items:center;margin-top:8px" }, draft, "同时生成这些模块的功能文档草稿"));
+  init.addEventListener("change", () => { moduleBox.style.display = init.checked ? "" : "none"; });
+  loadCatalog().then((cat) => { picker = modulePicker(cat.groups); modules.replaceChildren(picker.el); });
   const close = drawer([
     h("h2", {}, "增加项目"),
     h("label", {}, "文件夹"), path, h("label", {}, "名称"), name,
     h("label", { style: "display:flex;gap:6px;align-items:center" }, init, "文件夹里还没有 VibeDoc 时，就地运行 vibedoc init 初始化"),
+    moduleBox,
     err,
     h("div", { class: "bar" }, h("button", { class: "primary", onclick: async () => {
       try {
-        const r = await api("POST", "/api/projects", { path: path.value, name: name.value, init: init.checked });
+        const r = await api("POST", "/api/projects", { path: path.value, name: name.value, init: init.checked, modules: [...picker.picked], features: draft.checked });
         close();
         await loadProjects(false);
         if (r.id) selectProject(r.id);
         toast("已增加项目");
       } catch (e) {
-        err.textContent = /vibedoc\.config\.json/.test(e.message) ? `${e.message}。勾选下面的选项即可就地初始化。` : e.message;
+        if (/vibedoc\.config\.json/.test(e.message)) { init.checked = true; init.dispatchEvent(new Event("change")); }
+        err.textContent = /vibedoc\.config\.json/.test(e.message) ? `${e.message}。已勾选「就地初始化」，可以先选好模块再点增加。` : e.message;
       }
     } }, "增加")),
     h("div", { class: "note" }, "项目列表在 ~/.config/vibedoc/projects.json；在仓库里运行 vibedoc init 或 vibedoc add 也会出现在这里。"),
@@ -1147,7 +1199,14 @@ function renderManage() {
       h("div", { class: "feat-sec" }, `插件（${plugins.length}）`),
       plugins.length ? h("ul", { class: "doc" }, plugins.map((x, i) => h("li", {}, h("strong", {}, x.title), " ", h("code", { class: "mono" }, CONFIG.pluginPaths?.[i] || x.name), x.view ? "　有看板页" : ""))) : h("div", { class: "empty" }, "还没有插件。"),
       CONFIG.pluginErrors?.length ? h("div", { class: "err" }, CONFIG.pluginErrors.join("；")) : null,
-      addForm("plugin", "添加插件", [["path", "插件文件（相对仓库，例如 tools/vibedoc-plugins/x/plugin.ts）"]], (v) => api("POST", "/api/plugins", v), () => toast("已登记插件；AI 规则有变化时运行 vibedoc agents sync")),
+      addForm("plugin-new", "新建插件", [["name", "插件名（小写字母、数字、连字符）"], ["title", "标签页名称"], ["view", "要不要看板标签页", "select", { options: [["1", "要"], ["", "不要，只有命令"]] }]],
+        (v) => api("POST", "/api/plugins/new", { name: v.name, title: v.title, view: !!v.view }), (r) => toast(`已创建 ${r.file}，打开它开始写`)),
+      addForm("plugin", "登记已有插件", [["path", "插件文件（相对仓库，例如 tools/vibedoc-plugins/x/plugin.ts）"]], (v) => api("POST", "/api/plugins", v), () => toast("已登记插件；AI 规则有变化时运行 vibedoc agents sync")),
+      h("div", { class: "ai-box" },
+        h("strong", {}, "用 AI 做插件"),
+        h("div", { class: "empty" }, "VibeDoc 带了一个教 AI 写插件的 skill。先在终端安装（Claude Code 用 ", h("code", { class: "mono" }, "vibedoc skill install"), "，Codex 用 ", h("code", { class: "mono" }, "vibedoc skill install --codex"), "，只给这个仓库用加 ", h("code", { class: "mono" }, "--project"), "），然后把下面这句话发给 AI，改成你要的功能："),
+        h("pre", { class: "ts mono", style: "white-space:pre-wrap" }, `用 vibedoc-plugin skill 给「${CONFIG.name}」做一个 VibeDoc 插件：<描述你想要的功能，例如：在看板上显示 CHANGELOG.md 里最近 10 个版本，并提供 vibedoc release-notes 命令>`),
+        h("button", { class: "small", onclick: async () => { await navigator.clipboard.writeText(`用 vibedoc-plugin skill 给「${CONFIG.name}」做一个 VibeDoc 插件：`); toast("已复制，粘贴到和 AI 的对话里并补上需求"); } }, "复制开头")),
       h("div", { class: "feat-sec" }, "项目"),
       h("div", { class: "doc-bar" },
         h("button", { class: "small", onclick: openAddProject }, "＋ 增加项目"),
@@ -1833,7 +1892,7 @@ function render() {
   const newBtn = document.getElementById("new-rule");
   newBtn.textContent = state.view === "features" ? "提新功能" : state.view === "map" && state.mapLayer === "database" ? "新建表" : "新建规则";
   if (!PROJECT) {
-    main.replaceChildren(h("div", { class: "empty", style: "padding:40px;text-align:center;font-size:14px" }, "还没有项目。在要管理的仓库根目录运行 vibedoc init（或已有配置时运行 vibedoc add），这里会自动出现。"));
+    main.replaceChildren(h("div", { class: "empty", style: "padding:40px;text-align:center;font-size:14px" }, "还没有项目。点顶栏「＋ 项目」选一个文件夹（可以就地初始化并预选标准模块），或在仓库里运行 vibedoc init。"));
     return;
   }
   main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : state.view === "manage" ? renderManage() : state.view.startsWith("plugin:") ? renderPlugin(state.view.slice(7)) : renderMap()));
@@ -1983,7 +2042,8 @@ async function selectProject(id) {
   state.manage = { ...state.manage, file: null, text: "", changelogs: null, open: new Set() };
   closePopover();
   applyProject();
-  await loadAll();
+  // With no projects yet there is nothing to load; the empty-state page explains how to add one.
+  if (id) await loadAll();
   render();
   connect();
 }

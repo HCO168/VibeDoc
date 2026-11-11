@@ -12,6 +12,8 @@ import { syncAgents } from "./agents.ts";
 import { loadConfig, type Config } from "./config.ts";
 import { loadPlugins, pluginContext, pluginRules, type LoadedPlugin } from "./plugins.ts";
 import { addModule, addPlugin } from "./configedit.ts";
+import { applyStandardModules } from "./catalog.ts";
+import { scaffoldPlugin } from "./skill.ts";
 
 export const send = (res: ServerResponse, status: number, data: unknown, type = "application/json; charset=utf-8") => {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -247,7 +249,10 @@ export class Project {
     };
     // ---------- project setup ----------
     if (req.method === "POST" && path === "/modules") {
-      const file = addModule(this.root, this.cfg, data);
+      // Either standard modules ({ standard: [ids], features }) or one custom module.
+      const file = Array.isArray(data.standard)
+        ? (applyStandardModules(this.root, this.cfg, data.standard.map(String), !!data.features), "standard")
+        : addModule(this.root, this.cfg, data);
       this.cfg = loadConfig(this.root);
       this.docs = new DocSystem(this.root, this.cfg);
       this.codemap = null;
@@ -255,8 +260,8 @@ export class Project {
       this.emit("projects");
       return done("code", 201, { file });
     }
-    if (req.method === "POST" && path === "/plugins") {
-      const file = addPlugin(this.root, String(data.path ?? ""));
+    if (req.method === "POST" && (path === "/plugins" || path === "/plugins/new")) {
+      const file = path === "/plugins" ? addPlugin(this.root, String(data.path ?? "")) : scaffoldPlugin(this.root, String(data.name ?? ""), data.title ? String(data.title) : undefined, !!data.view)[0];
       this.cfg = loadConfig(this.root);
       this.ready = this.loadPlugins();
       this.ready.then(() => this.emit("projects"));

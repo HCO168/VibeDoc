@@ -52,7 +52,9 @@ ln -s ~/Documents/GitHub/VibeDoc/bin/vibedoc ~/.local/bin/vibedoc   # 任意在 
 
 ```bash
 cd 你的仓库
-vibedoc init --name 我的项目     # 配置、整套文档目录、CLAUDE.md、AGENTS.md 规则区块，并登记到项目列表
+vibedoc init --name 我的项目 --modules auth,profile,settings --features
+                                # 配置、整套文档目录、CLAUDE.md、AGENTS.md 规则区块，并登记到项目列表；
+                                # --modules 预选标准模块，--features 顺带生成它们的功能文档草稿
 vibedoc serve                   # 打开 http://127.0.0.1:4870，显示所有登记过的项目
 ```
 
@@ -137,6 +139,15 @@ modules:
 
 `examples/` 里有一份真实项目的配置可参考。
 
+## 标准模块
+
+`templates/modules/catalog.json` 是从真实项目里抽出的常用模块，分三组：通用（概述与发布、界面、公共与站点框架）、Web 应用（账号与安全、个人资料、设置、通知、站内信、支持与反馈、管理后台、文件与存储、聊天、日历、内容发布、短链接）、游戏（核心玩法、世界与地图、经济与资源、成长与进度）。每个模块有一句说明和几条常见功能。
+
+- 新建项目时预选：`vibedoc init --modules a,b [--features]`，或看板「＋ 项目」勾选「就地初始化」后勾选模块。
+- 之后再加：看板任意「＋ 新模块」里的「从标准模块中选」，或 `vibedoc module add --standard a,b [--features]`；已有的模块会跳过。
+- `--features`（或表单里的勾选项）为每个模块生成功能文档草稿：常见功能放在「常见功能（待确认）」分组，状态为「新提出」，按项目实际情况修改或删除。
+- `vibedoc module catalog` 列出全部标准模块。要增加或调整标准模块，改 `catalog.json` 即可。
+
 ## 插件
 
 插件是仓库里的一个 ES 模块（TypeScript 可直接写），默认导出一个对象，所有字段都可选（`name` 除外）：
@@ -151,6 +162,20 @@ modules:
 | `rules` | 一段 Markdown 规则，`vibedoc agents sync` 把它写进 `AGENTS.md` 规则区块的「Project Plugins」 |
 
 `ctx` 提供 `root`（仓库路径）、`cfg`（配置）、`docs`（文档系统：问题、待办、变更日志等）和 `notify()`（通知看板刷新）。浏览器脚本的 `render(vd)` 返回页面节点，`vd` 提供 `h`（建元素）、`mdBlocks`、`data(路由)`（读取一次并在到达后重绘、插件数据变化时自动刷新）、`post(路由, 数据)`、`toast`、`state`（跨重绘保留的状态）。完整例子见 [`examples/plugins/hello/`](examples/plugins/hello/)。插件是项目自己的代码，和项目里的其他脚本一样按完全信任运行。
+
+新建插件：`vibedoc plugins new <名称> --title <标签名> [--view]`（或看板「项目设置 → ＋ 新建插件」）在 `tools/vibedoc-plugins/<名称>/` 生成可运行的骨架并登记。
+
+### 让 AI 写插件
+
+[`skills/vibedoc-plugin/`](skills/vibedoc-plugin/) 是一个教 AI 写 VibeDoc 插件的 skill（`SKILL.md` 讲步骤、接口、约定与检查方法，`references/examples.md` 有三个完整例子）。安装：
+
+```bash
+vibedoc skill install            # Claude Code：~/.claude/skills/vibedoc-plugin
+vibedoc skill install --codex    # Codex：~/.codex/skills/vibedoc-plugin
+vibedoc skill install --project  # 只给当前仓库：.claude/skills/vibedoc-plugin，可提交给团队共用
+```
+
+然后对 AI 说「用 vibedoc-plugin skill 给这个项目做一个 VibeDoc 插件：<需求>」。其他 AI 工具可以直接读 `skills/vibedoc-plugin/SKILL.md`。看板「项目设置」里也有这段说明和可复制的开头。
 
 ## 测试
 
@@ -171,8 +196,10 @@ vibedoc question list | add "<问题>" [--body "<说明>"] | resolve <编号>
 vibedoc todo list | add <backlog|doing|testing> "<内容>"
 vibedoc totest list
 vibedoc agents sync | check
-vibedoc plugins [add <路径>]          # 本项目插件及其命令，或登记一个插件
+vibedoc plugins [add <路径> | new <名称> [--title 标签] [--view]]
 vibedoc module add <编号> <名称> [--backend a,b] [--frontend a,b] [--schemas a,b]
+vibedoc module add --standard a,b [--features] | module catalog
+vibedoc skill install [--codex | --project] | skill path
 vibedoc codemap generate | fn <名称> | route <路径片段>
 ```
 
@@ -200,6 +227,8 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `docs/store.ts`、`docs/cli.ts` | 变更日志、待决问题、待办、待验收、需求与草图的读写和命令 |
 | `plugins.ts` | 加载项目插件、插件规则 |
 | `configedit.ts` | 新增模块（`modules.yaml` 或配置）、登记插件 |
+| `catalog.ts`、`templates/modules/catalog.json` | 标准模块目录及其加入（含功能文档草稿） |
+| `skill.ts`、`skills/vibedoc-plugin/` | 写插件的 AI skill、`skill install`、插件骨架 `plugins new` |
 | `test/vibedoc.test.ts` | 端到端测试 |
 | `codemap/` | 代码地图：Rust 词法扫描、迁移重放与 SQL 引用、前端 API 调用识别、serde 字段换算、YAML 子集解析、Markdown／JSON 输出 |
 | `mac/VibeDoc.swift`、`mac/install.sh`、`mac/icon.svg` | 原生 macOS App（WebKit 窗口、菜单、服务启停）及其构建脚本 |

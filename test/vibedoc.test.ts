@@ -335,3 +335,45 @@ test("adding things: modules, plugins and documents from the board and the CLI",
   assert.ok(!(await api("GET", "/api/projects")).json.projects.some((p: any) => p.id === "delta"));
   assert.ok(existsSync(join(D, "vibedoc.config.json")));
 });
+
+test("standard modules, plugin scaffold and the AI skill", async () => {
+  assert.match(vibedoc(tmp, "module", "catalog").out, /auth\s+账号与安全[\s\S]*gameplay\s+核心玩法/);
+  const catalog = (await api("GET", "/api/module-catalog")).json;
+  assert.ok(catalog.groups.some((g: any) => g.modules.some((m: any) => m.id === "files")));
+  // init with standard modules and feature drafts
+  const E = join(tmp, "epsilon");
+  mkdirSync(E, { recursive: true });
+  assert.equal(vibedoc(E, "init", "--name", "Epsilon", "--modules", "auth,profile", "--features").code, 0);
+  assert.deepEqual(Object.keys(JSON.parse(read(join(E, "vibedoc.config.json"))).modules), ["auth", "profile"]);
+  assert.match(read(join(E, "doc/features/auth.md")), /## 常见功能（待确认）[\s\S]*### 注册\n<!-- feature:auth-f1 status=new/);
+  assert.match(vibedoc(E, "features", "list").out, /auth-f1\s+新提出/);
+  assert.equal(vibedoc(E, "init", "--modules", "nope").code, 1);
+  // add standard modules later, from the board and the CLI; existing ones are skipped
+  for (let i = 0; i < 30 && !(await api("GET", "/api/projects")).json.projects.some((p: any) => p.id === "epsilon"); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal((await api("POST", "/api/p/epsilon/modules", { standard: ["notifications", "auth"], features: false })).status, 201);
+  assert.ok(JSON.parse(read(join(E, "vibedoc.config.json"))).modules.notifications);
+  assert.ok(!existsSync(join(E, "doc/features/notifications.md")));
+  assert.match(vibedoc(E, "module", "add", "--standard", "settings", "--features").out, /settings/);
+  assert.ok(existsSync(join(E, "doc/features/settings.md")));
+  // a new project from the board, initialized with modules
+  const F = join(tmp, "phi");
+  mkdirSync(F, { recursive: true });
+  assert.equal((await api("POST", "/api/projects", { path: F, init: true, name: "Phi", modules: ["gameplay", "economy"], features: true })).status, 201);
+  assert.deepEqual(Object.keys(JSON.parse(read(join(F, "vibedoc.config.json"))).modules), ["gameplay", "economy"]);
+  assert.ok(existsSync(join(F, "doc/features/economy.md")));
+  // plugin scaffold: files, registration, command, board route and script
+  assert.match(vibedoc(E, "plugins", "new", "release-notes", "--title", "发布说明", "--view").out, /已创建并登记插件/);
+  assert.ok(existsSync(join(E, "tools/vibedoc-plugins/release-notes/client.js")));
+  assert.match(vibedoc(E, "plugins").out, /release-notes（发布说明）[\s\S]*vibedoc release-notes/);
+  assert.match(vibedoc(E, "release-notes").out, /"project": "Epsilon"/);
+  assert.equal(vibedoc(E, "plugins", "new", "release-notes").code, 1);
+  assert.equal((await api("POST", "/api/p/epsilon/plugins/new", { name: "board-only", title: "看板", view: true })).status, 201);
+  for (let i = 0; i < 30 && !(await api("GET", "/api/projects")).json.projects.find((p: any) => p.id === "epsilon").plugins.some((x: any) => x.name === "board-only"); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal((await api("GET", "/api/p/epsilon/plugins/board-only/summary")).json.project, "Epsilon");
+  assert.match(await (await fetch(`${base}/api/p/epsilon/plugins/board-only/client.js`)).text(), /registerView\("board-only"/);
+  // skill: path and project install
+  assert.match(vibedoc(E, "skill", "path").out.trim(), /skills\/vibedoc-plugin$/);
+  assert.match(vibedoc(E, "skill", "install", "--project").out, /\.claude\/skills\/vibedoc-plugin/);
+  assert.match(read(join(E, ".claude/skills/vibedoc-plugin/SKILL.md")), /^---\nname: vibedoc-plugin/);
+  assert.ok(existsSync(join(E, ".claude/skills/vibedoc-plugin/references/examples.md")));
+});

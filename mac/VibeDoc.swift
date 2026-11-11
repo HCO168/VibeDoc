@@ -270,26 +270,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func zoomOut(_ sender: Any?) { current.map { $0.webView.pageZoom = max($0.webView.pageZoom - 0.1, 0.5) } }
     @objc func actualSize(_ sender: Any?) { current?.webView.pageZoom = 1 }
 
-    // Adds a project folder through the board's own API (folders without VibeDoc are initialized).
+    // Picks a folder, then opens the board's 增加项目 form with it (standard modules can be chosen there).
     @objc func addProject(_ sender: Any?) {
         guard let w = current, let window = w.window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.prompt = "增加项目"
-        panel.message = "选择项目的仓库文件夹；还没有 VibeDoc 的文件夹会就地初始化。"
+        panel.message = "选择项目的仓库文件夹；还没有 VibeDoc 的，下一步可以就地初始化并预选模块。"
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let path = panel.url?.path,
                   let data = try? JSONSerialization.data(withJSONObject: [path]), let literal = String(data: data, encoding: .utf8) else { return }
-            let js = """
-            (async () => {
-              const r = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json", "X-Board-Token": TOKEN }, body: JSON.stringify({ path: \(literal)[0], init: true }) });
-              const j = await r.json().catch(() => ({}));
-              if (!r.ok) { alert(j.error || "增加项目失败"); return; }
-              await loadProjects(false);
-              if (j.id) selectProject(j.id);
-            })();
-            """
+            // The board's own form takes over: it offers in-place init with standard modules to pick.
+            let js = "openAddProject(\(literal)[0]);"
             w.webView.evaluateJavaScript(js, completionHandler: nil)
         }
     }

@@ -3,6 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "description": "本地规则看板、功能文档、代码地图与关系图",
+  "license": "SEE LICENSE IN LICENSE-EXCEPTION.md",
+  "author": "HCO168",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HCO168/VibeDoc.git"
+  },
+  "homepage": "https://github.com/HCO168/VibeDoc",
   "type": "module",
   "bin": {
     "vibedoc": "bin/vibedoc"

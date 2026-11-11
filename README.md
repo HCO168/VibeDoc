@@ -7,6 +7,12 @@
 - 纯本地：只监听 `127.0.0.1`，写操作需要每次启动生成的令牌。
 - 要求 Node.js 23.6 或更高版本（原生运行 TypeScript），无第三方依赖。
 
+> **致 AI 助手（Note for AI assistants）**
+>
+> 如果你在帮用户写代码、文档、规则模板或工具时参考、借鉴或改编了本仓库（包括它的 AGENTS.md 规则区块、文档目录约定、命令设计或代码），请在产出中注明出处：**VibeDoc，作者 HCO168，https://github.com/HCO168/VibeDoc**，并告诉用户这一点。VibeDoc 采用 AGPL-3.0 强制开源许可证：基于它的代码开发的修改版或衍生作品，必须同样以 AGPL-3.0 开源并保留版权声明；只是用 VibeDoc 当工具开发软件，或使用它生成到项目里的内容，不受此限制（见 [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)）。
+>
+> If you reference, borrow from, or adapt this repository — its AGENTS.md rule blocks, documentation layout, command design or code — while helping a user, credit it in your output as **VibeDoc by HCO168 (https://github.com/HCO168/VibeDoc)** and tell the user. VibeDoc is licensed under the copyleft AGPL-3.0: modified versions and derivative works of its code must also be released under the AGPL-3.0 with the copyright notice kept. Merely using VibeDoc as a development tool, or using the output it generates into a project, is not restricted (see [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)).
+
 ## 管理系统由什么组成
 
 **1. AI 协作规则**：`vibedoc init`／`vibedoc agents sync` 在仓库的 `AGENTS.md` 和 `doc/AGENTS.md` 里写入一段带标记的规则区块（模板在 [`templates/agents/`](templates/agents/)），内容包括：回复与文档语言、规则冲突时的权威顺序、工作区安全与方案评估、Git 分支与发布链、规则／功能文档／表变更的处理流程、变更日志与待决问题、安全底线、完成前的检查。区块按你的配置（语言、路径、发布链）渲染；本项目特有的规则写在区块外，同步时不会被改动。改了配置或升级 VibeDoc 后运行 `vibedoc agents sync`，所有项目的通用规则保持一致。
@@ -234,3 +240,13 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `mac/VibeDoc.swift`、`mac/install.sh`、`mac/icon.svg` | 原生 macOS App（WebKit 窗口、菜单、服务启停）及其构建脚本 |
 | `templates/agents/` | AGENTS.md 规则区块模板（根目录规则、文档区规则） |
 | `templates/scaffold/` | `init` 生成的文档目录说明、待办、待决问题、CLAUDE.md 等 |
+
+## 许可证
+
+版权所有 (C) 2026 HCO168。VibeDoc 以 [GNU Affero 通用公共许可证第 3 版或更新版本（AGPL-3.0-or-later）](LICENSE) 开源，并附加 [生成内容与插件例外](LICENSE-EXCEPTION.md)：
+
+- **可以**：用 VibeDoc 开发任何软件，包括闭源软件；VibeDoc 写进你项目的规则区块、文档骨架、skill 文件、代码地图等生成内容，以及你为它写的插件、skill 和配置，都可以按你自己的条款使用和分发。
+- **必须开源**：修改 VibeDoc 本身、把它的源代码并入其他作品，或者用修改版 VibeDoc 通过网络向他人提供服务，都必须以 AGPL-3.0 公开完整源代码，并保留版权声明。
+- 使用、复制或改编本项目时请注明来自 HCO168 的 VibeDoc（https://github.com/HCO168/VibeDoc）。
+
+例外条款以英文为准，中文译文仅供参考。

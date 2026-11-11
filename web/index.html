@@ -1000,6 +1000,9 @@ function openAddProject() {
   setTimeout(() => path.focus(), 30);
 }
 document.getElementById("add-project").addEventListener("click", openAddProject);
+// Inside VibeDoc.app the server stops when the app quits, so there is no separate stop button.
+const IN_APP = navigator.userAgent.includes("VibeDocApp/");
+if (IN_APP) document.getElementById("stop").style.display = "none";
 
 // ---------- project documents (项目管理) ----------
 const MANAGE_SECTIONS = [

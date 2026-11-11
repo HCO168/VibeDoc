@@ -60,15 +60,21 @@ vibedoc serve                   # 打开 http://127.0.0.1:4870，显示所有登
 
 管理项目列表：`vibedoc add [路径]`、`vibedoc remove <路径或编号>`、`vibedoc projects`。列表存在 `~/.config/vibedoc/projects.json`，看板会自动跟着变化。`vibedoc serve --only` 只服务当前仓库（例如在 worktree 里临时预览）。
 
-### 像 App 一样启动（macOS）
+### macOS App
 
 ```bash
-~/Documents/GitHub/VibeDoc/mac/install.sh [某个仓库] --name "VibeDoc"
+~/Documents/GitHub/VibeDoc/mac/install.sh [某个仓库]
 ```
 
-生成 `~/Applications/<名称>.app`（给了仓库就顺便登记它），之后用 Spotlight、Raycast 或 Alfred 搜名称打开：服务没运行就在后台启动，已运行就直接打开；装了 Chrome 时用独立窗口打开，已有看板窗口则切到前台（服务是这次新启动的就顺带刷新）。一个 App 管理所有项目。
+用 Swift 编译出原生的 `~/Applications/VibeDoc.app`（需要 Xcode 或 Command Line Tools），不依赖 Chrome 或其他浏览器；给了仓库就顺便登记它。之后从 Dock、启动台、Spotlight、Raycast 或 Alfred 打开：
 
-App 是 `osacompile` 生成的 AppleScript 小程序（ad-hoc 签名）。首次打开 macOS 会询问是否允许它访问项目所在文件夹（如「文稿」）以及控制 Google Chrome，点「允许」即可；重装后会再问一次。后台服务继承 App 的权限，所以小程序在服务运行期间常驻（无 Dock 图标），服务停止后自动退出。App 只记录 VibeDoc 目录和 node 路径，更新 VibeDoc 后无需重装：在页面点「停止服务」再从 App 打开即可。日志在 `~/Library/Logs/vibedoc.log`。
+- 打开时如果没有看板服务就自己启动，已有 `vibedoc serve`（全部项目）在跑就直接连上；退出 App 时只停掉它自己启动的服务。
+- 原生窗口和菜单：「文件 → 新建窗口」（⌘N，打开当前项目）、「增加项目…」（⌘O，选文件夹，没有 VibeDoc 的就地初始化）、「显示 → 重新载入」（⌘R，服务停了会重新启动）、放大／缩小（⌘+／⌘−／⌘0）、全屏，编辑菜单支持拷贝粘贴和撤销；窗口位置会记住。
+- 页面里的确认框、文件上传用 macOS 原生对话框；指向其他网站的链接用默认浏览器打开。「帮助」菜单可在浏览器中打开看板、查看服务日志 `~/Library/Logs/vibedoc.log`。
+- App 只记录 VibeDoc 目录和 node 路径：`git pull` 更新 VibeDoc 后，退出并重新打开 App 即可；修改了 `mac/VibeDoc.swift`、移动了目录或更换了 node 时重新运行安装脚本。
+- 首次打开时 macOS 会询问是否允许 VibeDoc 访问项目所在文件夹（如「文稿」），点「允许」；服务继承 App 的权限。App 是 ad-hoc 签名，重装后会再问一次。
+
+不用 App 时，`vibedoc serve` 后在任意浏览器打开 http://127.0.0.1:4870 也一样。
 
 ## 配置 `vibedoc.config.json`
 
@@ -196,6 +202,6 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `configedit.ts` | 新增模块（`modules.yaml` 或配置）、登记插件 |
 | `test/vibedoc.test.ts` | 端到端测试 |
 | `codemap/` | 代码地图：Rust 词法扫描、迁移重放与 SQL 引用、前端 API 调用识别、serde 字段换算、YAML 子集解析、Markdown／JSON 输出 |
-| `mac/install.sh`、`mac/launch.sh`、`mac/icon.svg` | macOS 启动器 |
+| `mac/VibeDoc.swift`、`mac/install.sh`、`mac/icon.svg` | 原生 macOS App（WebKit 窗口、菜单、服务启停）及其构建脚本 |
 | `templates/agents/` | AGENTS.md 规则区块模板（根目录规则、文档区规则） |
 | `templates/scaffold/` | `init` 生成的文档目录说明、待办、待决问题、CLAUDE.md 等 |

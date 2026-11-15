@@ -2,8 +2,10 @@
 // relationship graph for every registered project (~/.config/vibedoc/projects.json), on http://127.0.0.1:<port>.
 //   vibedoc serve          all registered projects (the repository you run it in is registered first)
 //   vibedoc serve --only   just the repository found from the current directory (or VIBEDOC_REPO)
-// Port: PORT, else the `port` of the repository it runs in, else 4870. Listens on loopback only; writes need
-// the per-start token embedded in the served page. Per-project API lives under /api/p/<project id>/.
+// Port: PORT, else the `port` of the repository it runs in, else 4870. Listens on loopback only and answers only
+// requests addressed to 127.0.0.1/localhost; writes need the per-start token embedded in the served page. A hosted
+// copy of the board (web.ts, `vibedoc web on`) gets the token from /api/session once its origin is allowed.
+// Per-project API lives under /api/p/<project id>/.
 import { createServer, type IncomingMessage } from "node:http";
 import { existsSync, readFileSync, realpathSync, watch } from "node:fs";
 import { join, dirname, resolve } from "node:path";
@@ -15,8 +17,10 @@ import { spawnSync } from "node:child_process";
 import { Project, send } from "./project.ts";
 import { loadCatalog, loadPresets } from "./catalog.ts";
 import { skillDir } from "./skill.ts";
+import { WEB_API_VERSION, gate } from "./web.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const VERSION = JSON.parse(readFileSync(join(here, "package.json"), "utf8")).version as string;
 const only = process.argv.includes("--only");
 const token = randomBytes(24).toString("hex");
 
@@ -74,13 +78,20 @@ async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
+  const from = gate(req, res, port);
+  if (!from) return;
   try {
     if (req.method === "GET" && url.pathname === "/") {
       const html = readFileSync(join(here, "web/index.html"), "utf8").replace("__BOARD_TOKEN__", token);
+      // Not framable: another page must not overlay the board and steer clicks.
+      res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+      res.setHeader("X-Frame-Options", "DENY");
       return send(res, 200, html, "text/html; charset=utf-8");
     }
+    // A hosted board page (allowed origin) fetches the write token here; the local page has it embedded.
+    if (req.method === "GET" && url.pathname === "/api/session") return send(res, 200, { app: "vibedoc", version: VERSION, api: WEB_API_VERSION, token, mode: only ? "only" : "registry", from });
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return send(res, 200, { app: "vibedoc", mode: only ? "only" : "registry", root: cwdRoot, roots: [...projects.values()].map((p) => p.root), pid: process.pid });
+      return send(res, 200, { app: "vibedoc", version: VERSION, api: WEB_API_VERSION, mode: only ? "only" : "registry", root: cwdRoot, roots: [...projects.values()].map((p) => p.root), pid: process.pid });
     }
     if (req.method === "GET" && url.pathname === "/api/module-catalog") return send(res, 200, { groups: loadCatalog(), presets: loadPresets(), skill: skillDir() });
     if (req.method === "GET" && url.pathname === "/api/projects") {
@@ -89,8 +100,6 @@ const server = createServer(async (req, res) => {
     }
     if (req.method !== "GET" && url.pathname.startsWith("/api/")) {
       if (req.headers["x-board-token"] !== token) return send(res, 403, { error: "缺少或错误的看板令牌，请刷新页面" });
-      const host = String(req.headers.host ?? "");
-      if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)) return send(res, 403, { error: "只接受本机请求" });
     }
     if (req.method === "POST" && url.pathname === "/api/shutdown") {
       send(res, 200, { success: true });

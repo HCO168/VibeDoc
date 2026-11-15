@@ -84,6 +84,20 @@ vibedoc serve                   # 打开 http://127.0.0.1:4870，显示所有登
 
 不用 App 时，`vibedoc serve` 后在任意浏览器打开 http://127.0.0.1:4870 也一样。
 
+### 网页版
+
+同一个看板也托管在 https://vibedoc.hconet.com。它只提供界面：页面直接连接你电脑上运行的 VibeDoc 服务，读写本机仓库，数据不经过网站的服务器。
+
+```bash
+vibedoc web on      # 允许官方网页版连接本机服务（只需一次）
+vibedoc serve       # 或打开 VibeDoc App
+```
+
+- 默认谁都不能连：`vibedoc web on` 才把 `https://vibedoc.hconet.com`（及 HCONet 开发站）写进 `~/.config/vibedoc/settings.json`；`vibedoc web off` 撤销，`vibedoc web` 查看。
+- 自己托管网页版：把 `web/index.html` 原样放到任意 https 网站，再 `vibedoc web on --origin https://你的网站`。页面找不到服务时会显示连接步骤，可改本机服务地址（默认 `http://127.0.0.1:4870`）。
+- 浏览器询问「访问本地网络上的设备」时选允许。Chrome、Edge 可用；Safari 可能拦截网页访问本机服务。
+- 安全：服务只监听 127.0.0.1，只接受发给 127.0.0.1／localhost 的请求（防 DNS 重绑定），其他网站的跨域请求一律拒绝；允许的网站通过 `/api/session` 取得写入令牌，等同于本机看板的权限，所以只允许你信任的网站。本机看板页面禁止被其他网站嵌入。
+
 ## 配置 `vibedoc.config.json`
 
 ```json
@@ -224,6 +238,7 @@ vibedoc module add --standard a,b [--features] | module catalog
 vibedoc preset list | show <编号>
 vibedoc module add --preset <编号> [--features]
 vibedoc skill install [--codex | --project] | skill path
+vibedoc web [on|off] [--origin <网址>]
 vibedoc codemap generate | fn <名称> | route <路径片段>
 ```
 
@@ -245,7 +260,8 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `registry.ts` | 本机项目列表 `~/.config/vibedoc/projects.json` |
 | `agents.ts` | 渲染规则模板，写入或检查 `AGENTS.md` 中的规则区块 |
 | `server.ts`、`project.ts` | 本地 HTTP 服务：页面、`/api/projects`、`/api/health`、`/api/shutdown`，以及每个项目在 `/api/p/<编号>/` 下的数据、文档与实时事件 |
-| `web/index.html` | 全部页面 |
+| `web/index.html` | 全部页面（本机服务提供，或作为网页版托管） |
+| `web.ts` | 网页版可连接的网站、跨域与本机请求检查、`vibedoc web` |
 | `rules/store.ts` | 规则、功能文档与表变更的解析、编号、状态行与哈希、整篇保存、原文不变性校验 |
 | `rules/cli.ts`、`features/cli.ts`、`tables/cli.ts` | 状态命令 |
 | `tables/spec.ts` | 表变更条目的格式：字段表与约束的解析和写回、SQL 草稿、是否已在迁移中 |

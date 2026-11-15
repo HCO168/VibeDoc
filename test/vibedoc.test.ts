@@ -423,3 +423,31 @@ test("todo changes preserve Markdown, reject stale moves, and record completion 
     write(doc, original);
   }
 });
+
+test("roadmap milestones validate dependencies, concurrent edits and release checks", async () => {
+  const route = "/api/p/beta/docs/roadmap";
+  const item = (id: string) => ({ id, title: id === "prototype" ? "可玩原型" : "首发", due: "2027-01-12", owner: "小林", goal: "完成核心流程" });
+  const create = (value: object) => api("POST", route, value);
+  const update = (value: object) => api("PUT", route, value);
+  const list = async () => (await api("GET", route)).json.items;
+  assert.equal((await create({ ...item("../secret") })).status, 400);
+  assert.equal((await create({ ...item("prototype"), due: "2027-02-30" })).status, 400);
+  assert.equal((await create(item("prototype"))).status, 201);
+  assert.equal((await create(item("prototype"))).status, 409);
+  assert.equal((await create({ ...item("release"), dependsOn: ["absent"] })).status, 400);
+  assert.equal((await create({ ...item("release"), dependsOn: ["prototype"], checks: [{ text: "测试包可启动", checked: false }] })).status, 201);
+  const [prototype, release] = await list();
+  assert.deepEqual(release.blockedBy, ["prototype"]);
+  assert.equal((await update({ ...prototype, dependsOn: ["release"] })).status, 400);
+  assert.equal((await update({ ...release, status: "done" })).status, 400);
+  assert.equal(vibedoc(B, "roadmap", "set", "prototype", "done").code, 0);
+  assert.equal((await update({ ...release, status: "done" })).status, 400);
+  assert.equal((await update({ ...release, checks: [{ text: "测试包可启动", checked: true }] })).status, 200);
+  assert.equal((await update({ ...release, status: "done" })).status, 409);
+  assert.equal(vibedoc(B, "roadmap", "set", "release", "done").code, 0);
+  const [done] = (await list()).filter((m: any) => m.id === "release");
+  assert.equal(done.status, "done");
+  assert.deepEqual(done.blockedBy, []);
+  assert.match(read(join(B, "doc/roadmap/release.md")), /- 状态：done[\s\S]*- \[x\] 测试包可启动/);
+  assert.match(vibedoc(B, "roadmap", "show", "release").out, /首发[\s\S]*完成核心流程/);
+});

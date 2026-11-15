@@ -28,6 +28,7 @@
 | 功能与架构文档 | `doc/features/<模块>.md` | AI 撰写，你可直接改 |
 | 表变更 | `doc/table-changes/<schema>.md` | 你提出，AI 写迁移 |
 | 行为规范、接口与数据契约 | `doc/behavior/`、`doc/backend/`、`doc/tables/` | AI |
+| 路线图 | `doc/roadmap/<编号>.md` | 你和 AI，可在看板编辑 |
 | 待办、目标记录、待验收 | `doc/todo.md`、`doc/goal_logs.md`、`doc/totest/` | AI |
 | 变更日志、失效文档 | `doc/change_logs/<日期>/`、`doc/expired/` | AI |
 
@@ -39,7 +40,7 @@
 
 - **规则看板**：规则按 新提出、待你确认、进行中、已修改、已实现 分列，另有搁置区；卡片可编辑，待你确认的可「确认计划，开始做」或「退回」。
 - **功能文档**：整篇渲染阅读，每条功能旁显示状态（新提出、待你确认、开发中、已持久化、已上线、已修改、搁置）；「编辑文档」或双击正文整篇编辑，⌘／Ctrl+S 保存，按标题保留每条功能的编号与状态。「提新功能」快速提一条。
-- **项目管理**：总览按「定义范围 → 规划功能 → 跟踪开发 → 验收与交付」汇总进度并提供入口；待决问题（直接作答）、待办看板（新增、移动、填写验收证据后完成）、待验收、目标记录、变更日志（按日期、可搜索、点开看全文）、需求原话（新建与编辑）、UI 草图（上传图片或 PDF、缩略图浏览）、交付说明、文档入口；AI 规则区块过期时顶部提醒。
+- **项目管理**：总览按「定义范围 → 规划功能 → 跟踪开发 → 验收与交付」汇总进度并提供入口；路线图（里程碑、目标日期、负责人、依赖和发布检查）；待决问题（直接作答）、待办看板（新增、移动、填写验收证据后完成）、待验收、目标记录、变更日志（按日期、可搜索、点开看全文）、需求原话（新建与编辑）、UI 草图（上传图片或 PDF、缩略图浏览）、交付说明、文档入口；AI 规则区块过期时顶部提醒。
 - **代码地图**（需配置 `codemap`）：前端、API、后端、数据库、结构体五个标签，各按自己的方式分组；接口直接显示请求与响应字段；每行可「提要求」写规则，或在关系图中查看。「数据库」标签里可以「新建表」「改表」，表单旁实时显示 SQL 草稿。
 - **关系图**（需配置 `codemap`）：页面 → 接口（递归展开数据体）→ 处理函数调用链 → 读写的表；也可从任一接口、函数、结构体或表出发。
 
@@ -114,7 +115,7 @@ vibedoc serve                   # 打开 http://127.0.0.1:4870，显示所有登
 | `language` | AI 回复与写文档用的语言，写进规则区块 |
 | `git.promotion` | 发布链：第一个是集成分支，最后一个是发布分支，默认 `["dev", "main"]` |
 | `git.branchPrefix` | AI 任务分支前缀，默认 `codex/` |
-| `docs.root` | AI 维护区根目录，默认 `doc`；其余位置默认在它下面，也可单独指定：`human`、`requests`、`sketches`、`questions`、`deliverables`、`behavior`、`contracts`（数组）、`todo`、`goals`、`totest`、`changelogs`、`expired` |
+| `docs.root` | AI 维护区根目录，默认 `doc`；其余位置默认在它下面，也可单独指定：`human`、`requests`、`sketches`、`questions`、`deliverables`、`behavior`、`contracts`（数组）、`todo`、`roadmap`、`goals`、`totest`、`changelogs`、`expired` |
 | `rulesDir`、`featuresDir`、`tablesDir` | 规则、功能文档、表变更目录，默认 `doc/human/rules`、`doc/features`、`doc/table-changes` |
 | `modules` | 模块 `id → 标题`；只用文档功能时这样列出即可 |
 | `modulesFile` | 可选，`modules.yaml`：除标题外还声明每个模块拥有哪些代码文件（代码地图用来归属文件，格式见下） |
@@ -169,6 +170,8 @@ vibedoc module add --preset web-app --features   # 给已有项目补模块
 
 工程启动后打开「项目管理 → 总览」，用需求与草图确定范围，完善功能文档，再用待办看板跟踪工作。待办看板分为待开发、进行中、待验收和已完成；标记完成时填写验证结果或记录路径。看板和 CLI 共用 `doc/todo.md`，已有项目首次完成一项时会自动补上 `Done` 节。
 
+在「项目管理 → 路线图」创建原型、预览版、首发等阶段成果。可指定负责人、目标日期和依赖，卡片会提示逾期和未完成依赖。发布里程碑可用「加入发布检查模板」生成回归、构建、恢复和交付检查；都验收后再记录完成。路线图按里程碑保存在仓库里的 Markdown 文件，旧项目在创建第一个里程碑时自动建目录。
+
 ## 插件
 
 插件是仓库里的一个 ES 模块（TypeScript 可直接写），默认导出一个对象，所有字段都可选（`name` 除外）：
@@ -216,6 +219,7 @@ vibedoc changelog new --role <角色> --slug <英文短名> | list [N]
 vibedoc question list | add "<问题>" [--body "<说明>"] | resolve <编号>
 vibedoc todo list [--numbered] | add <backlog|doing|testing> "<内容>"
 vibedoc todo move <来源> <分组内编号> <目标> [--evidence "<验收结果或记录路径>"]
+vibedoc roadmap list | show <编号> | set <编号> <planned|doing|done>
 vibedoc totest list
 vibedoc agents sync | check
 vibedoc plugins [add <路径> | new <名称> [--title 标签] [--view]]
@@ -249,6 +253,7 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `rules/store.ts` | 规则、功能文档与表变更的解析、编号、状态行与哈希、整篇保存、原文不变性校验 |
 | `rules/cli.ts`、`features/cli.ts`、`tables/cli.ts` | 状态命令 |
 | `tables/spec.ts` | 表变更条目的格式：字段表与约束的解析和写回、SQL 草稿、是否已在迁移中 |
+| `docs/roadmap.ts` | 里程碑 Markdown、依赖检查和版本冲突保护 |
 | `docs/store.ts`、`docs/cli.ts` | 变更日志、待决问题、待办、待验收、需求与草图的读写和命令 |
 | `plugins.ts` | 加载项目插件、插件规则 |
 | `configedit.ts` | 新增模块（`modules.yaml` 或配置）、登记插件 |

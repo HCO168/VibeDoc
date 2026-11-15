@@ -7,6 +7,7 @@
 //   vibedoc todo list [--numbered] | add <backlog|doing|testing> "<内容>" | move <来源> <编号> <目标> [--evidence "<证据>"]
 //   vibedoc totest list                                 outstanding QA handoff files
 //   vibedoc agents sync | check                         write or check the shared rule blocks in AGENTS.md
+import { Roadmap, MILESTONE_STATUS } from "./roadmap.ts";
 import { DocSystem } from "./store.ts";
 import { syncAgents } from "../agents.ts";
 import { loadPlugins, pluginRules } from "../plugins.ts";
@@ -56,6 +57,27 @@ try {
     const [from, n, to] = positional;
     docs.moveTodo(from, Number(n), to, flag("--evidence") ?? "");
     console.log(`已移动 ${cfg.docs.todo} 中的待办`);
+  } else if (group === "roadmap") {
+    const roadmap = new Roadmap(root, cfg.docs.roadmap);
+    const { items, errors } = roadmap.overview();
+    const item = items.find((m) => m.id === positional[0]);
+    if (command === "list") {
+      for (const m of items) console.log(`${m.id}　[${m.status}] ${m.title}${m.due ? ` · ${m.due}` : ""}${m.owner ? ` · ${m.owner}` : ""}${m.blockedBy.length ? ` · 等待 ${m.blockedBy.join("、")}` : ""}`);
+      for (const e of errors) console.error(`${e.name}：${e.message}`);
+      if (!items.length && !errors.length) console.log("还没有里程碑");
+      if (errors.length) process.exitCode = 1;
+    } else if (command === "show" && item) {
+      console.log(`# ${item.title}（${item.id}）\n状态：${item.status} · 负责人：${item.owner || "未分配"} · 目标日期：${item.due || "未设置"}`);
+      if (item.dependsOn.length) console.log(`依赖：${item.dependsOn.join("、")}`);
+      if (item.blockedBy.length) console.log(`等待：${item.blockedBy.join("、")}`);
+      if (item.goal) console.log(item.goal);
+      for (const c of item.checks) console.log(`- [${c.checked ? "x" : " "}] ${c.text}`);
+    } else if (command === "set" && item && MILESTONE_STATUS.includes(positional[1] as typeof MILESTONE_STATUS[number])) {
+      roadmap.save(item.id, { ...item, status: positional[1] as typeof MILESTONE_STATUS[number] }, item.version);
+      console.log(`已更新里程碑 ${item.id}：${positional[1]}`);
+    } else {
+      throw new Error("用法：vibedoc roadmap list | show <已有编号> | set <已有编号> <planned|doing|done>");
+    }
   } else if (group === "totest" && command === "list") {
     for (const f of docs.listFiles(cfg.docs.totest)) if (!/(README|AGENTS)\.md$/.test(f.name)) console.log(f.path);
   } else if (group === "agents" && (command === "sync" || command === "check")) {
@@ -67,7 +89,7 @@ try {
     if (command === "check" && results.some((r) => r.state === "stale" || r.state === "missing")) process.exitCode = 1;
     if (results.some((r) => r.state === "inserted")) console.log("提示：区块插在已有文件里，请删除区块外与之重复的通用规则，只留本项目专属规则。");
   } else {
-    console.log("用法：vibedoc changelog new|list · question list|add|resolve · todo list|add|move · totest list · agents sync|check");
+    console.log("用法：vibedoc changelog new|list · question list|add|resolve · todo list|add|move · roadmap list|show|set · totest list · agents sync|check");
     process.exitCode = group ? 1 : 0;
   }
 } catch (error) {

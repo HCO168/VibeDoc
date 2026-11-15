@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { versionOf } from "../rules/store.ts";
+import { Roadmap } from "./roadmap.ts";
 import type { Config } from "../config.ts";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -254,6 +255,7 @@ export class DocSystem {
       questions: this.questions(),
       todo: this.todo(todo),
       todoVersion: versionOf(todo.text),
+      roadmap: new Roadmap(this.root, d.roadmap).overview(),
       totest: files(d.totest),
       requests: files(d.requests),
       sketches: this.listFiles(d.sketches, [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".md"]).filter((f) => !/(^|\/)README\.md$/.test(f.name)),

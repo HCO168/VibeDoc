@@ -7,6 +7,7 @@ import { buildModel, loadModules } from "./codemap/model.ts";
 import { toJson } from "./codemap/json.ts";
 import { RuleStore, LAYERS, outline, editableText, versionOf, kindsFor, type DocKind, type Layer, type RuleItem } from "./rules/store.ts";
 import { specOf, normalize, formatSpec, toSql } from "./tables/spec.ts";
+import { Roadmap } from "./docs/roadmap.ts";
 import { DocSystem } from "./docs/store.ts";
 import { syncAgents } from "./agents.ts";
 import { loadConfig, type Config } from "./config.ts";
@@ -190,7 +191,7 @@ export class Project {
     watchPath(cfg.rulesDir, (f) => f.endsWith(".md") && onRules());
     watchPath(cfg.featuresDir, (f) => f.endsWith(".md") && onFeatures());
     watchPath(cfg.tablesDir, (f) => f.endsWith(".md") && onTables());
-    for (const d of new Set([cfg.docs.root, cfg.docs.human])) watchPath(d, () => onDocs());
+    for (const d of new Set([cfg.docs.root, cfg.docs.human, ...(cfg.docs.roadmap.startsWith(`${cfg.docs.root}/`) ? [] : [cfg.docs.roadmap])])) watchPath(d, () => onDocs());
     if (cfg.codemap) {
       const dirs = [...cfg.codemap.crates.map((c) => `${c.dir}/src`), ...(cfg.codemap.migrationsDir ? [cfg.codemap.migrationsDir] : []), ...cfg.codemap.frontendRoots, ...cfg.watch];
       for (const d of new Set(dirs)) watchPath(d, onCode);
@@ -215,7 +216,9 @@ export class Project {
     const { rules, features, tables, docs } = this;
     const plug = /^\/plugins\/([a-z0-9-]+)\/(.+)$/.exec(path);
     if (plug) return this.handlePlugin(req, res, plug[1], plug[2], query, data);
+    const roadmap = new Roadmap(this.root, this.cfg.docs.roadmap);
     if (req.method === "GET") {
+      if (path === "/docs/roadmap") return send(res, 200, roadmap.overview());
       if (path === "/codemap") return send(res, 200, this.codemapJson());
       if (path === "/rules") return send(res, 200, { items: rules.all().map(view) });
       if (path === "/features") return send(res, 200, this.featureDoc());
@@ -268,6 +271,11 @@ export class Project {
       return send(res, 201, { file });
     }
     // ---------- documents ----------
+    if (path === "/docs/roadmap" && (req.method === "POST" || req.method === "PUT")) {
+      if (req.method === "PUT" && typeof data.version !== "string") return send(res, 400, { error: "缺少里程碑版本，请重新打开编辑面板" });
+      const item = roadmap.save(String(data.id ?? ""), data, req.method === "PUT" ? data.version : undefined);
+      return done("docs", req.method === "PUT" ? 200 : 201, { id: item.id });
+    }
     if (req.method === "POST" && path === "/docs/questions") return done("docs", 201, { n: docs.addQuestion(String(data.title ?? ""), String(data.body ?? "")) });
     if (req.method === "POST" && path === "/docs/goals") {
       docs.addGoal(String(data.title ?? ""), String(data.text ?? ""));

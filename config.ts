@@ -26,6 +26,7 @@ export type DocsLayout = {
   behavior: string; // current product behavior
   contracts: string[]; // API and data contracts
   todo: string; // product backlog / in progress / under test
+  roadmap: string; // project milestones, dependencies and release checklists
   goals: string; // multi-step goals and their open decisions
   totest: string; // outstanding manual QA handoffs
   changelogs: string; // dated change logs: <date>/<HHMMSS>_<role>_<slug>.md
@@ -97,6 +98,7 @@ export function loadConfig(root: string): Config {
       behavior: str(d.behavior, `${docRoot}/behavior`),
       contracts: Array.isArray(d.contracts) ? strs(d.contracts) : [`${docRoot}/backend`, `${docRoot}/tables`],
       todo: str(d.todo, `${docRoot}/todo.md`),
+      roadmap: str(d.roadmap, `${docRoot}/roadmap`),
       goals: str(d.goals, `${docRoot}/goal_logs.md`),
       totest: str(d.totest, `${docRoot}/totest`),
       changelogs: str(d.changelogs, `${docRoot}/change_logs`),

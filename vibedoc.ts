@@ -26,7 +26,7 @@ import { installSkill, scaffoldPlugin, skillDir } from "./skill.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
 const SUBCOMMANDS: Record<string, string> = { serve: "server.ts", rules: "rules/cli.ts", features: "features/cli.ts", tables: "tables/cli.ts", codemap: "codemap/cli.ts" };
-const DOC_COMMANDS = new Set(["changelog", "question", "todo", "totest", "agents"]);
+const DOC_COMMANDS = new Set(["changelog", "question", "todo", "totest", "agents", "roadmap"]);
 
 // Files `init` creates when missing: [path, template under templates/scaffold].
 function scaffold(cfg: Config): [string, string][] {
@@ -46,6 +46,7 @@ function scaffold(cfg: Config): [string, string][] {
     [`${cfg.tablesDir}/README.md`, "tables-README.md"],
     [d.todo, "todo.md"],
     [d.goals, "goals.md"],
+    [`${d.roadmap}/README.md`, "roadmap-README.md"],
     [`${d.totest}/README.md`, "totest-README.md"],
     [`${d.totest}/AGENTS.md`, "totest-AGENTS.md"],
     [`${d.changelogs}/README.md`, "changelogs-README.md"],
@@ -210,6 +211,6 @@ if (command === "init" || command === "preset") {
   process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
   await import(join(here, SUBCOMMANDS[command]));
 } else if (!(await pluginCommand(command))) {
-  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
+  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | rules | features | tables | changelog | question | todo | roadmap | totest | agents | codemap | <插件命令>");
   process.exitCode = command ? 1 : 0;
 }

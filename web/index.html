@@ -102,6 +102,16 @@ main { padding: 14px 16px 40px; }
 .journey-card p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
 .journey-card .doc-bar { margin: 0; }
 .journey-card progress { width: 100%; accent-color: var(--done); margin: 0 0 8px; }
+.roadmap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 10px; align-items: start; }
+.roadmap-card { overflow-wrap: anywhere; }
+.roadmap-card .doc { margin-bottom: 8px; }
+.roadmap-card fieldset, .milestone-editor fieldset { border: 1px solid var(--border); border-radius: 8px; min-width: 0; margin: 0 0 8px; }
+.roadmap-card fieldset label, .milestone-editor fieldset label { display: flex; gap: 6px; align-items: baseline; }
+.roadmap-card .roadmap-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.roadmap-link { scroll-margin-top: 105px; }
+.roadmap-link:focus { outline: 2px solid var(--accent); }
+.milestone-editor label { display: grid; gap: 4px; }
+.milestone-editor .doc-bar { justify-content: flex-start; }
 .todo-form { display: flex; gap: 6px; flex-wrap: wrap; }
 .todo-form input { flex: 1 1 170px; }
 .todo-card { overflow-wrap: anywhere; cursor: default; }
@@ -304,8 +314,8 @@ const toast = (msg) => {
 };
 async function api(method, path, data) {
   // Per-project calls are written as "/api/..." and sent to the selected project.
-  // Global endpoints (projects, shutdown, the module catalog) are not per project.
-  if (path.startsWith("/api/") && !/^\/api\/(shutdown|projects|module-catalog)(\/|$)/.test(path)) path = P(path.slice(4));
+  // Preserve global endpoints and already-scoped requests.
+  if (path.startsWith("/api/") && !/^\/api\/(shutdown|projects|module-catalog|p)(\/|$)/.test(path)) path = P(path.slice(4));
   const res = await fetch(path, { method, headers: { "Content-Type": "application/json", "X-Board-Token": TOKEN }, body: data ? JSON.stringify(data) : undefined });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `请求失败（${res.status}）`);
@@ -1116,7 +1126,7 @@ if (IN_APP) document.getElementById("stop").style.display = "none";
 
 // ---------- project documents (项目管理) ----------
 const MANAGE_SECTIONS = [
-  ["overview", "总览"], ["questions", "待决问题"], ["todo", "待办"], ["totest", "待验收"], ["goals", "目标记录"], ["changelogs", "变更日志"],
+  ["overview", "总览"], ["roadmap", "路线图"], ["questions", "待决问题"], ["todo", "待办"], ["totest", "待验收"], ["goals", "目标记录"], ["changelogs", "变更日志"],
   ["requests", "需求原话"], ["sketches", "UI 草图"], ["deliverables", "交付说明"], ["index", "文档入口"], ["settings", "项目设置"],
 ];
 // Typing into a form in this view: live updates wait so the input is not replaced.
@@ -1146,6 +1156,7 @@ const manageLink = (key, label) => h("button", { class: "small", onclick: () => 
 const topView = (key, label) => h("button", { class: "small", onclick: () => document.querySelector(`.tabs button[data-view="${key}"]`)?.click() }, label);
 function projectOverview(d) {
   const waiting = d.questions.filter((q) => !q.answers.length).length;
+  const milestones = d.roadmap.items.filter((m) => m.status !== "done");
   const review = state.features.items.filter((f) => f.status === "confirm").length;
   const byLane = (key) => d.todo.filter((s) => s.key === key).reduce((n, s) => n + s.items.length, 0);
   const total = TODO_LANES.reduce((n, [key]) => n + byLane(key), 0);
@@ -1158,12 +1169,104 @@ function projectOverview(d) {
     h("div", { class: "journey-grid" },
       card("1. 定义范围", `${d.requests.length} 份需求 · ${d.sketches.length} 份草图 · ${waiting} 个问题等你回答`,
         [manageLink("requests", "写需求"), manageLink("sketches", "草图"), manageLink("questions", "待决问题")]),
-      card("2. 规划功能", `${state.features.items.length} 条功能 · ${review} 条待确认`,
-        [topView("features", "功能文档"), topView("board", "规则看板"), manageLink("goals", "目标记录")]),
+      card("2. 规划功能", `${state.features.items.length} 条功能 · ${review} 条待确认 · ${milestones.length} 个未完成里程碑`,
+        [manageLink("roadmap", "路线图"), topView("features", "功能文档"), topView("board", "规则看板"), manageLink("goals", "目标记录")]),
       card("3. 跟踪开发", `${byLane("backlog")} 项待开发 · ${byLane("doing")} 项进行中 · ${done}/${total} 项完成`,
         [manageLink("todo", "待办看板")], h("progress", { value: done, max: Math.max(total, 1), "aria-label": "待办完成进度" })),
       card("4. 验收与交付", `${byLane("testing")} 项待验收任务 · ${d.totest.length} 份验收交接 · ${d.deliverables.length} 份交付说明`,
         [manageLink("totest", "验收交接"), manageLink("deliverables", "交付说明"), manageLink("changelogs", "变更日志")])),
+  ];
+}
+
+const MILESTONES = [["planned", "计划中"], ["doing", "进行中"], ["done", "已完成"]];
+const RELEASE_CHECKS = [
+  "记录版本号、交付范围与变更说明",
+  "在目标环境或目标设备通过关键流程回归",
+  "验证构建包、部署步骤与恢复方案",
+  "确认验收负责人、交付说明与发布后检查",
+];
+function openMilestone(roadmap, item) {
+  const input = (type, value = "", extra = {}) => h("input", { type, value, ...extra });
+  const id = input("text", item?.id, { required: true, readOnly: !!item, pattern: "[a-z0-9][a-z0-9\\-]{0,59}", placeholder: "例如 public-beta" });
+  const title = input("text", item?.title, { required: true, placeholder: "例如：首个可玩版本" });
+  const owner = input("text", item?.owner);
+  const due = input("date", item?.due);
+  const status = h("select", {}, MILESTONES.map(([value, label]) => h("option", { value, selected: item?.status === value }, label)));
+  const deps = new Map(roadmap.items.filter((m) => m.id !== item?.id).map((m) => [m.id,
+    h("input", { type: "checkbox", checked: item?.dependsOn.includes(m.id) })]));
+  for (const dep of item?.dependsOn ?? []) if (!deps.has(dep)) deps.set(dep, h("input", { type: "checkbox", checked: true }));
+  const goal = h("textarea", { placeholder: "完成时应达到什么结果？" }, item?.goal ?? "");
+  const checks = h("textarea", { placeholder: "每行一个检查项；前缀 [x] 表示已完成" },
+    (item?.checks ?? []).map((c) => `[${c.checked ? "x" : " "}] ${c.text}`).join("\n"));
+  const err = h("div", { class: "err", role: "alert" });
+  const save = h("button", { class: "primary", type: "submit" }, item ? "保存里程碑" : "创建里程碑");
+  const field = (label, el) => h("label", {}, label, el);
+  const project = PROJECT;
+  const close = drawer([h("h2", {}, item ? "编辑里程碑" : "新建里程碑"),
+    h("form", { class: "manage-form milestone-editor", onsubmit: async (e) => {
+      e.preventDefault();
+      save.disabled = true;
+      try {
+        await api(item ? "PUT" : "POST", `/api/p/${project}/docs/roadmap`, {
+          id: id.value.trim(), title: title.value, owner: owner.value, due: due.value, status: status.value, goal: goal.value,
+          dependsOn: [...deps].filter(([, box]) => box.checked).map(([dep]) => dep), version: item?.version,
+          checks: checks.value.split("\n").map((line) => ({
+            text: line.trim().replace(/^(?:-\s+)?\[[ xX]\]\s+/, ""),
+            checked: /^(?:-\s+)?\[[xX]\]\s+/.test(line.trim()),
+          })),
+        });
+        close();
+        if (PROJECT === project) { await loadDocs(); render(); }
+        toast("已保存里程碑");
+      } catch (error) { err.textContent = error.message; save.disabled = false; }
+    } }, field("名称", title), field("编号（创建后沿用）", id), field("负责人（可选）", owner), field("目标日期（可选）", due), field("状态", status),
+      h("fieldset", {}, h("legend", {}, "依赖（需要先完成的里程碑）"), deps.size ? [...deps].map(([dep, box]) => h("label", {}, box, roadmap.items.find((m) => m.id === dep)?.title ?? `${dep}（已找不到）`)) : h("div", { class: "empty" }, "目前没有其他里程碑。")),
+      field("目标（支持 Markdown）", goal), field("检查项", checks),
+      h("div", { class: "doc-bar" }, h("button", { type: "button", class: "small", onclick: () => {
+        const existing = new Set(checks.value.split("\n").map((line) => line.trim().replace(/^(?:-\s+)?\[[ xX]\]\s+/, "")));
+        const suggested = RELEASE_CHECKS.filter((line) => !existing.has(line)).map((line) => `[ ] ${line}`);
+        checks.value = [checks.value.trimEnd(), ...suggested].filter(Boolean).join("\n");
+      } }, "加入发布检查模板")),
+      err, h("div", { class: "doc-bar" }, save, h("button", { type: "button", onclick: () => close() }, "取消")))]);
+  setTimeout(() => title.focus(), 0);
+}
+function renderRoadmap(roadmap) {
+  const byId = new Map(roadmap.items.map((m) => [m.id, m]));
+  const localNow = new Date();
+  const today = [localNow.getFullYear(), String(localNow.getMonth() + 1).padStart(2, "0"), String(localNow.getDate()).padStart(2, "0")].join("-");
+  return [
+    h("div", { class: "doc-bar" }, h("h2", { class: "journey-title" }, "项目路线图"), h("button", { class: "primary", onclick: () => openMilestone(roadmap) }, "＋ 里程碑")),
+    h("p", { class: "note" }, "按目标日期安排项目的关键成果。先完成依赖和检查项，再标记里程碑完成；日常工作可放进待办看板。"),
+    ...roadmap.errors.map((e) => h("div", { class: "warn-box" }, `${e.name}：${e.message}`)),
+    roadmap.items.length ? h("div", { class: "roadmap-grid" }, roadmap.items.map((m) => {
+      const n = m.checks.filter((c) => c.checked).length;
+      const err = h("div", { class: "err", role: "alert" });
+      return h("article", { id: `milestone-${m.id}`, tabindex: "-1", class: "journey-card roadmap-card roadmap-link" },
+        h("div", { class: "roadmap-meta" },
+          h("span", { class: `st ${m.status === "planned" ? "new" : m.status}` }, MILESTONES.find(([key]) => key === m.status)[1]),
+          m.status !== "done" && m.due && m.due < today ? h("span", { class: "st modified" }, "已过目标日期") : null,
+          m.blockedBy.length ? h("span", { class: "st confirm" }, "依赖未完成") : null),
+        h("h3", { style: "margin-top:6px" }, m.title),
+        h("p", {}, `${m.due || "未设目标日期"} · ${m.owner || "未指定负责人"} · ${m.id}`),
+        m.goal ? h("div", { class: "doc" }, mdBlocks(m.goal, (t) => h("h4", {}, mdInline(t)))) : null,
+        m.dependsOn.length ? h("div", { class: "doc-bar" }, h("span", {}, "依赖："), m.dependsOn.map((id) => byId.has(id)
+          ? h("button", { class: "small", onclick: () => { document.getElementById(`milestone-${id}`)?.focus(); } }, byId.get(id).title)
+          : h("span", { class: "st modified" }, `${id}（找不到）`))) : null,
+        m.checks.length ? h("fieldset", {}, h("legend", {}, `检查项 ${n}/${m.checks.length}`), m.checks.map((c, i) => h("label", {},
+          h("input", { type: "checkbox", checked: c.checked, disabled: m.status === "done", onchange: async (event) => {
+            const box = event.target;
+            const card = box.closest("article");
+            const inputs = [...card.querySelectorAll('input[type="checkbox"]')];
+            for (const input of inputs) input.disabled = true;
+            const project = PROJECT;
+            try {
+              await api("PUT", `/api/p/${project}/docs/roadmap`, { ...m, checks: m.checks.map((check, idx) => idx === i ? { ...check, checked: box.checked } : check) });
+              if (project === PROJECT) { await loadDocs(); render(); }
+            } catch (error) { box.checked = c.checked; err.textContent = error.message; }
+            finally { for (const input of inputs) input.disabled = false; }
+          } }), mdInline(c.text)))) : null,
+        err, h("div", { class: "doc-bar" }, h("button", { class: "small", onclick: () => openMilestone(roadmap, m) }, "编辑里程碑")));
+    })) : h("div", { class: "empty" }, "还没有里程碑。可以先为原型、预览版或首次发布设一个目标。"),
   ];
 }
 
@@ -1234,7 +1337,7 @@ function renderManage() {
   const m = state.manage;
   const answered = d.questions.filter((q) => q.answers.length).length;
   const counts = {
-    questions: d.questions.length, todo: d.todo.reduce((n, s) => n + s.items.length, 0), totest: d.totest.length,
+    roadmap: d.roadmap.items.filter((m) => m.status !== "done").length, questions: d.questions.length, todo: d.todo.reduce((n, s) => n + s.items.length, 0), totest: d.totest.length,
     requests: d.requests.length, sketches: d.sketches.length, deliverables: d.deliverables.length,
   };
   const side = h("div", { class: "mods" }, h("div", { class: "grp-h" }, "项目管理"), MANAGE_SECTIONS.map(([k, name]) => h("button", { class: m.section === k ? "on" : "", onclick: () => manageSection(k) },
@@ -1245,6 +1348,8 @@ function renderManage() {
   let body = [];
   if (m.section === "overview") {
     body = projectOverview(d);
+  } else if (m.section === "roadmap") {
+    body = renderRoadmap(d.roadmap);
   } else if (m.section === "questions") {
     body = [
       h("div", { class: "empty" }, "AI 遇到需要你拍板的问题记在 ", h("code", { class: "mono" }, p.questions), "。直接在下面回答；AI 收到答复后把结论写进行为文档，再删除这一条。"),

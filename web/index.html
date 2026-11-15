@@ -2347,6 +2347,9 @@ function renderConnect(problem) {
   live.className = "live";
   const server = h("input", { value: saved("vibedocServer", DEFAULT_SERVER), style: "width:220px", spellcheck: "false" });
   const err = h("div", { class: "err" }, problem && problem !== "unreachable" ? problem : "");
+  localNetworkPermission().then((state) => {
+    if (state === "denied") err.textContent = "浏览器已禁止这个网站访问本地网络：点地址栏左侧的图标 → 网站设置 → 本地网络访问 → 允许，然后刷新页面。";
+  });
   const own = ["https://vibedoc.hconet.com", "https://vibedoc.hcon.dev"].includes(location.origin) ? "" : ` --origin ${location.origin}`;
   const cmd = (text) => h("code", { class: "cmd" }, text);
   const retry = async () => {
@@ -2380,10 +2383,24 @@ function startBoard() {
   document.body.classList.remove("offline");
   loadProjects(true);
 }
+// Chrome asks before a website may reach this machine (Local Network Access); until the visitor answers, the
+// first request just waits, so say what it is waiting for instead of showing an empty page.
+async function localNetworkPermission() {
+  try { return (await navigator.permissions.query({ name: "local-network-access" })).state; } catch { return null; }
+}
+function renderWaiting() {
+  document.body.classList.add("offline");
+  document.getElementById("live").textContent = "等待浏览器授权";
+  document.getElementById("main").replaceChildren(h("div", { class: "connect" },
+    h("h2", {}, "请允许访问本地网络"),
+    h("p", {}, "浏览器正在询问是否允许这个网站访问本地网络上的设备：在地址栏下方的提示里选择「允许」。网页版只用这个权限连接你电脑上的 VibeDoc 服务（127.0.0.1），不访问其他设备。")));
+}
 (async () => {
   if (!HOSTED) return startBoard();
   const server = saved("vibedocServer", DEFAULT_SERVER);
+  const waiting = setTimeout(async () => { if ((await localNetworkPermission()) === "prompt") renderWaiting(); }, 800);
   const ok = LOCAL_SERVER.test(server) ? await connectServer(server) : "unreachable";
+  clearTimeout(waiting);
   ok === true ? startBoard() : renderConnect(ok);
 })();
 </script>

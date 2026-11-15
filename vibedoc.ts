@@ -206,7 +206,7 @@ if (command === "init" || command === "preset") {
     if (rest[0] === "on") list = setWebOrigins([...list, ...(given ?? DEFAULT_WEB_ORIGINS)]);
     else if (rest[0] === "off") list = setWebOrigins(given ? list.filter((o) => !given.includes(o)) : []);
     else if (rest[0]) throw new Error("用法：vibedoc web [on|off] [--origin <网址>]");
-    console.log(list.length ? `允许这些网站使用本机的 VibeDoc 服务（服务需要在运行）：\n  ${list.join("\n  ")}\n打开 ${list[0]} 即可；关闭：vibedoc web off` : "没有网站可以使用本机的 VibeDoc 服务。允许官方托管看板：vibedoc web on");
+    console.log(list.length ? `允许这些网站使用本机的 VibeDoc 服务（服务需要在运行）：\n  ${list.join("\n  ")}\n在这些网站打开网页版即可；关闭：vibedoc web off` : "没有网站可以使用本机的 VibeDoc 服务。允许官方托管看板：vibedoc web on");
   } catch (error) {
     console.error((error as Error).message);
     process.exitCode = 1;

@@ -4,6 +4,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { request } from "node:http";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -106,7 +107,7 @@ before(async () => {
   for (let i = 0; i < 100; i++) {
     try {
       const html = await (await fetch(`${base}/`)).text();
-      token = /const TOKEN = "([a-f0-9]+)"/.exec(html)![1];
+      token = /(?:const|let) TOKEN = "([a-f0-9]+)"/.exec(html)![1];
       break;
     } catch {
       await new Promise((r) => setTimeout(r, 100));
@@ -204,6 +205,49 @@ test("server: projects, health and token checks", async () => {
   assert.deepEqual(beta.agents, []);
   assert.equal((await api("POST", "/api/p/beta/rules", { module: "app", layer: "api", title: "x", body: "" }, false)).status, 403);
   assert.equal((await api("GET", "/api/p/nope/rules")).status, 404);
+});
+
+// A raw request, so Origin and Host can be set like a browser on another site would.
+function raw(method: string, path: string, headers: Record<string, string>): Promise<{ status: number; headers: Record<string, any>; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request(`${base}${path}`, { method, headers }, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+test("hosted board: allowed origins, preflight and loopback-only hosts", async () => {
+  const site = "https://vibedoc.hconet.com";
+  // Off by default: a website gets no CORS access and no token.
+  let r = await raw("GET", "/api/session", { Origin: site });
+  assert.equal(r.status, 403);
+  assert.equal(r.headers["access-control-allow-origin"], undefined);
+  assert.equal(vibedoc(tmp, "web", "on").code, 0);
+  r = await raw("GET", "/api/session", { Origin: site });
+  assert.equal(r.status, 200);
+  assert.equal(r.headers["access-control-allow-origin"], site);
+  assert.equal(JSON.parse(r.body).token, token);
+  assert.equal(JSON.parse(r.body).api, 1);
+  const pre = await raw("OPTIONS", "/api/p/beta/rules", { Origin: site, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type,x-board-token", "Access-Control-Request-Private-Network": "true" });
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers["access-control-allow-private-network"], "true");
+  assert.match(pre.headers["access-control-allow-headers"], /X-Board-Token/);
+  // Other websites stay refused, and so does a request addressed to another host name (DNS rebinding).
+  assert.equal((await raw("GET", "/api/projects", { Origin: "https://evil.example" })).status, 403);
+  assert.equal((await raw("GET", "/api/p/alpha/rules", { Host: "evil.example:80" })).status, 403);
+  assert.equal((await raw("GET", "/", { Host: "evil.example" })).status, 403);
+  // The board page cannot be framed by another site.
+  assert.equal((await raw("GET", "/", {})).headers["x-frame-options"], "DENY");
+  // Self-hosted copies are added explicitly; plain http websites are rejected.
+  assert.equal(vibedoc(tmp, "web", "on", "--origin", "https://board.example.org/x").code, 0);
+  assert.equal((await raw("GET", "/api/session", { Origin: "https://board.example.org" })).status, 200);
+  assert.equal(vibedoc(tmp, "web", "on", "--origin", "http://example.com").code, 1);
+  assert.equal(vibedoc(tmp, "web", "off").code, 0);
+  assert.equal((await raw("GET", "/api/session", { Origin: site })).status, 403);
 });
 
 test("server: rules board", async () => {

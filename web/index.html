@@ -142,6 +142,13 @@ main { padding: 14px 16px 40px; }
 .parked-area summary { cursor: pointer; color: var(--muted); }
 .parked-area .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 8px; }
 .empty { color: var(--muted); font-size: 12px; padding: 8px 4px; }
+.connect { max-width: 640px; margin: 48px auto; padding: 0 16px; font-size: 14px; line-height: 1.7; }
+.connect h2 { font-size: 20px; margin: 0 0 8px; }
+.connect ol { padding-left: 20px; }
+.connect li { margin: 6px 0; }
+.connect .cmd { background: var(--panel-2); border-radius: 4px; padding: 1px 6px; font-size: 12.5px; user-select: all; }
+.connect .doc-bar { margin-top: 16px; align-items: center; }
+body.offline header > :not(h1):not(#live) { display: none; }
 .map { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; }
 .mods { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; align-self: start; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; }
 .mods button { display: flex; width: 100%; border: 0; background: transparent; text-align: left; padding: 6px 8px; gap: 6px; }
@@ -258,12 +265,18 @@ pre.ts { background: var(--panel); border: 1px solid var(--border); border-radiu
 </header>
 <main id="main"></main>
 <script>
-const TOKEN = "__BOARD_TOKEN__";
+let TOKEN = "__BOARD_TOKEN__";
+// Hosted copy (a website such as https://vibedoc.hconet.com serves this file and the token placeholder stays unfilled):
+// every request goes to this machine's VibeDoc server at BASE, which must allow the site first (`vibedoc web on`).
+const HOSTED = TOKEN === "__BOARD_" + "TOKEN__";
+const LOCAL_SERVER = /^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}$/;
+const DEFAULT_SERVER = "http://127.0.0.1:4870";
+let BASE = "";
 // The selected project (vibedoc.config.json values from /api/projects); every data request goes to /api/p/<id>.
 let PROJECTS = [];
 let PROJECT = "";
 let CONFIG = { name: "", rulesDir: "", featuresDir: "", tablesDir: "", migrationsDir: null, codemap: false, docs: {}, agents: [] };
-const P = (path) => `/api/p/${PROJECT}${path}`;
+const P = (path) => `${BASE}/api/p/${PROJECT}${path}`;
 const getJson = async (path) => {
   const res = await fetch(P(path));
   const json = await res.json().catch(() => ({}));
@@ -314,8 +327,8 @@ const toast = (msg) => {
 };
 async function api(method, path, data) {
   // Per-project calls are written as "/api/..." and sent to the selected project.
-  // Preserve global endpoints and already-scoped requests.
-  if (path.startsWith("/api/") && !/^\/api\/(shutdown|projects|module-catalog|p)(\/|$)/.test(path)) path = P(path.slice(4));
+  // Global and already-scoped endpoints keep their path on both the local and hosted boards.
+  if (path.startsWith("/api/")) path = /^\/api\/(shutdown|projects|module-catalog|p)(\/|$)/.test(path) ? BASE + path : P(path.slice(4));
   const res = await fetch(path, { method, headers: { "Content-Type": "application/json", "X-Board-Token": TOKEN }, body: data ? JSON.stringify(data) : undefined });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `请求失败（${res.status}）`);
@@ -985,7 +998,7 @@ function addForm(key, label, fields, submit, done) {
 let CATALOG = null;
 const loadCatalog = async () => {
   if (CATALOG) return CATALOG;
-  const res = await fetch("/api/module-catalog");
+  const res = await fetch(`${BASE}/api/module-catalog`);
   if (!res.ok) throw new Error("加载项目预设失败，请关闭后重试");
   return (CATALOG = await res.json());
 };
@@ -1156,7 +1169,7 @@ const manageLink = (key, label) => h("button", { class: "small", onclick: () => 
 const topView = (key, label) => h("button", { class: "small", onclick: () => document.querySelector(`.tabs button[data-view="${key}"]`)?.click() }, label);
 function projectOverview(d) {
   const waiting = d.questions.filter((q) => !q.answers.length).length;
-  const milestones = d.roadmap.items.filter((m) => m.status !== "done");
+  const milestoneCount = d.roadmap?.items.filter((m) => m.status !== "done").length;
   const review = state.features.items.filter((f) => f.status === "confirm").length;
   const byLane = (key) => d.todo.filter((s) => s.key === key).reduce((n, s) => n + s.items.length, 0);
   const total = TODO_LANES.reduce((n, [key]) => n + byLane(key), 0);
@@ -1169,8 +1182,8 @@ function projectOverview(d) {
     h("div", { class: "journey-grid" },
       card("1. 定义范围", `${d.requests.length} 份需求 · ${d.sketches.length} 份草图 · ${waiting} 个问题等你回答`,
         [manageLink("requests", "写需求"), manageLink("sketches", "草图"), manageLink("questions", "待决问题")]),
-      card("2. 规划功能", `${state.features.items.length} 条功能 · ${review} 条待确认 · ${milestones.length} 个未完成里程碑`,
-        [manageLink("roadmap", "路线图"), topView("features", "功能文档"), topView("board", "规则看板"), manageLink("goals", "目标记录")]),
+      card("2. 规划功能", `${state.features.items.length} 条功能 · ${review} 条待确认${milestoneCount === undefined ? "" : ` · ${milestoneCount} 个未完成里程碑`}`,
+        [d.roadmap ? manageLink("roadmap", "路线图") : null, topView("features", "功能文档"), topView("board", "规则看板"), manageLink("goals", "目标记录")]),
       card("3. 跟踪开发", `${byLane("backlog")} 项待开发 · ${byLane("doing")} 项进行中 · ${done}/${total} 项完成`,
         [manageLink("todo", "待办看板")], h("progress", { value: done, max: Math.max(total, 1), "aria-label": "待办完成进度" })),
       card("4. 验收与交付", `${byLane("testing")} 项待验收任务 · ${d.totest.length} 份验收交接 · ${d.deliverables.length} 份交付说明`,
@@ -1337,7 +1350,7 @@ function renderManage() {
   const m = state.manage;
   const answered = d.questions.filter((q) => q.answers.length).length;
   const counts = {
-    roadmap: d.roadmap.items.filter((m) => m.status !== "done").length, questions: d.questions.length, todo: d.todo.reduce((n, s) => n + s.items.length, 0), totest: d.totest.length,
+    roadmap: d.roadmap?.items.filter((m) => m.status !== "done").length, questions: d.questions.length, todo: d.todo.reduce((n, s) => n + s.items.length, 0), totest: d.totest.length,
     requests: d.requests.length, sketches: d.sketches.length, deliverables: d.deliverables.length,
   };
   const side = h("div", { class: "mods" }, h("div", { class: "grp-h" }, "项目管理"), MANAGE_SECTIONS.map(([k, name]) => h("button", { class: m.section === k ? "on" : "", onclick: () => manageSection(k) },
@@ -1349,7 +1362,7 @@ function renderManage() {
   if (m.section === "overview") {
     body = projectOverview(d);
   } else if (m.section === "roadmap") {
-    body = renderRoadmap(d.roadmap);
+    body = d.roadmap ? renderRoadmap(d.roadmap) : [h("div", { class: "note" }, "请更新本机 VibeDoc 并重启服务，再使用项目路线图。")];
   } else if (m.section === "questions") {
     body = [
       h("div", { class: "empty" }, "AI 遇到需要你拍板的问题记在 ", h("code", { class: "mono" }, p.questions), "。直接在下面回答；AI 收到答复后把结论写进行为文档，再删除这一条。"),
@@ -2297,7 +2310,7 @@ async function selectProject(id) {
   connect();
 }
 async function loadProjects(first) {
-  const data = await (await fetch("/api/projects")).json();
+  const data = await (await fetch(`${BASE}/api/projects`)).json();
   PROJECTS = data.projects;
   const want = location.hash.slice(1) || saved("project", "");
   const next = PROJECTS.some((p) => p.id === PROJECT) ? PROJECT : PROJECTS.some((p) => p.id === want) ? want : PROJECTS[0]?.id || "";
@@ -2307,7 +2320,72 @@ async function loadProjects(first) {
 }
 document.getElementById("project").addEventListener("change", (e) => selectProject(e.target.value));
 window.addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && id !== PROJECT && PROJECTS.some((p) => p.id === id)) selectProject(id); });
-loadProjects(true);
+// ---------- hosted page: connecting to this machine's server ----------
+const WEB_API = 1;
+let retryTimer = null;
+async function connectServer(server) {
+  BASE = server;
+  try {
+    const res = await fetch(`${BASE}/api/session`);
+    const s = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(s.error || `本机服务拒绝了请求（${res.status}）`);
+    if (s.app !== "vibedoc") throw new Error("这个地址上运行的不是 VibeDoc");
+    if ((s.api ?? 0) < WEB_API) throw new Error(`本机的 VibeDoc（${s.version || "旧版本"}）太旧：更新 VibeDoc 后重启服务`);
+    TOKEN = s.token;
+    const live = document.getElementById("live");
+    live.title = `已连接本机 ${BASE}（VibeDoc ${s.version}）`;
+    return true;
+  } catch (e) {
+    // A refused origin answers without CORS headers, so it shows up as a network error like a stopped server.
+    return e instanceof TypeError ? "unreachable" : e.message;
+  }
+}
+function renderConnect(problem) {
+  document.body.classList.add("offline");
+  const live = document.getElementById("live");
+  live.textContent = "未连接本机";
+  live.className = "live";
+  const server = h("input", { value: saved("vibedocServer", DEFAULT_SERVER), style: "width:220px", spellcheck: "false" });
+  const err = h("div", { class: "err" }, problem && problem !== "unreachable" ? problem : "");
+  const own = ["https://vibedoc.hconet.com", "https://vibedoc.hcon.dev"].includes(location.origin) ? "" : ` --origin ${location.origin}`;
+  const cmd = (text) => h("code", { class: "cmd" }, text);
+  const retry = async () => {
+    const url = server.value.trim().replace(/\/+$/, "");
+    if (!LOCAL_SERVER.test(url)) { err.textContent = "地址必须是本机，例如 http://127.0.0.1:4870"; return; }
+    remember("vibedocServer", url);
+    const ok = await connectServer(url);
+    if (ok === true) return startBoard();
+    err.textContent = ok === "unreachable" ? `连不上 ${url}：按上面的步骤检查后再试` : ok;
+  };
+  document.getElementById("main").replaceChildren(h("div", { class: "connect" },
+    h("h2", {}, "连接本机的 VibeDoc"),
+    h("p", {}, "这个网页只是看板界面。规则、功能文档和代码都留在你的电脑上：页面直接连接本机运行的 VibeDoc 服务读写仓库，不经过这个网站的服务器。"),
+    h("ol", {},
+      h("li", {}, "安装 VibeDoc（需要 Node 23.6 或更新版本）：", cmd("git clone https://github.com/HCO168/VibeDoc.git"), "，再把其中的 ", cmd("bin/vibedoc"), " 链接到 PATH。"),
+      h("li", {}, "允许这个网站连接本机服务（只需一次，", cmd("vibedoc web off"), " 撤销）：", cmd(`vibedoc web on${own}`)),
+      h("li", {}, "启动服务：在仓库里运行 ", cmd("vibedoc serve"), "，或打开 VibeDoc App。"),
+      h("li", {}, "浏览器询问是否允许访问本地网络上的设备时，选择允许。Safari 可能拦截网页访问本机服务，建议用 Chrome 或 Edge。")),
+    h("div", { class: "doc-bar" }, h("label", {}, "本机服务地址 ", server), h("button", { class: "primary small", onclick: retry }, "连接")),
+    err));
+  // Keep trying quietly, so starting the server is enough.
+  clearInterval(retryTimer);
+  retryTimer = setInterval(async () => {
+    if (document.hidden) return;
+    const url = saved("vibedocServer", DEFAULT_SERVER);
+    if ((await connectServer(url)) === true) startBoard();
+  }, 4000);
+}
+function startBoard() {
+  clearInterval(retryTimer);
+  document.body.classList.remove("offline");
+  loadProjects(true);
+}
+(async () => {
+  if (!HOSTED) return startBoard();
+  const server = saved("vibedocServer", DEFAULT_SERVER);
+  const ok = LOCAL_SERVER.test(server) ? await connectServer(server) : "unreachable";
+  ok === true ? startBoard() : renderConnect(ok);
+})();
 </script>
 </body>
 </html>

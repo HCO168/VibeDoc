@@ -12,6 +12,7 @@
 //   vibedoc module add --standard auth,profile [--features]   add standard modules; vibedoc module catalog lists them
 //   vibedoc plugins new <名称> [--title 标签] [--view]          scaffold a plugin under tools/vibedoc-plugins and register it
 //   vibedoc skill install [--claude|--codex|--project] | path  install the AI skill for building plugins
+//   vibedoc web [on|off] [--origin <网址>]   let the hosted board (https://vibedoc.hconet.com) use this machine's server
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,7 @@ import { loadPlugins, pluginContext, pluginRules } from "./plugins.ts";
 import { addModule, addPlugin } from "./configedit.ts";
 import { applyStandardModules, loadCatalog, loadPresets, projectPreset, resolveStandardModules } from "./catalog.ts";
 import { installSkill, scaffoldPlugin, skillDir } from "./skill.ts";
+import { DEFAULT_WEB_ORIGINS, normalizeOrigin, setWebOrigins, webOrigins } from "./web.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
@@ -193,6 +195,22 @@ if (command === "init" || command === "preset") {
     console.error((error as Error).message);
     process.exitCode = 1;
   }
+} else if (command === "web") {
+  // vibedoc web            show which websites may use this machine's VibeDoc server
+  // vibedoc web on         allow the official hosted board (or --origin <网址>, for a self-hosted copy)
+  // vibedoc web off        allow none (or --origin <网址> to remove just that one)
+  try {
+    const i = rest.indexOf("--origin");
+    const given = i >= 0 ? [normalizeOrigin(rest[i + 1] ?? "")] : null;
+    let list = webOrigins();
+    if (rest[0] === "on") list = setWebOrigins([...list, ...(given ?? DEFAULT_WEB_ORIGINS)]);
+    else if (rest[0] === "off") list = setWebOrigins(given ? list.filter((o) => !given.includes(o)) : []);
+    else if (rest[0]) throw new Error("用法：vibedoc web [on|off] [--origin <网址>]");
+    console.log(list.length ? `允许这些网站使用本机的 VibeDoc 服务（服务需要在运行）：\n  ${list.join("\n  ")}\n打开 ${list[0]} 即可；关闭：vibedoc web off` : "没有网站可以使用本机的 VibeDoc 服务。允许官方托管看板：vibedoc web on");
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
 } else if (command === "add") {
   const root = rest[0] ?? findRoot();
   console.log(addProject(root) ? `已加入：${root}` : `已在列表中：${root}`);
@@ -211,6 +229,6 @@ if (command === "init" || command === "preset") {
   process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
   await import(join(here, SUBCOMMANDS[command]));
 } else if (!(await pluginCommand(command))) {
-  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | rules | features | tables | changelog | question | todo | roadmap | totest | agents | codemap | <插件命令>");
+  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | web [on|off] | rules | features | tables | changelog | question | todo | roadmap | totest | agents | codemap | <插件命令>");
   process.exitCode = command ? 1 : 0;
 }

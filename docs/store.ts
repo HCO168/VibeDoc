@@ -2,6 +2,7 @@
 // QA handoffs, goals, requests and sketches. Used by the CLI (for AI agents) and the board.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { versionOf } from "../rules/store.ts";
 import type { Config } from "../config.ts";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -134,36 +135,96 @@ export class DocSystem {
   }
 
   // ---------- todo ----------
-  static TODO_SECTIONS: Record<string, string> = { backlog: "Backlog", doing: "In Progress", testing: "Under Test" };
-  todo() {
-    const text = read(this.abs(this.cfg.docs.todo));
-    const sections: { name: string; items: string[] }[] = [];
+  static TODO_SECTIONS: Record<string, string> = { backlog: "Backlog", doing: "In Progress", testing: "Under Test", done: "Done" };
+  private parseTodo(lines: string[]) {
+    const sections: { name: string; key: string | null; start: number; end: number; tasks: { text: string; start: number; end: number }[] }[] = [];
     let cur: (typeof sections)[number] | null = null;
-    for (const line of text.split("\n")) {
-      const h = /^##\s+(?:\d+\.\s*)?(.+?)\s*$/.exec(line);
-      if (h) sections.push((cur = { name: h[1], items: [] }));
-      else if (cur && /^- /.test(line)) cur.items.push(line.slice(2));
-      else if (cur && /^\s+\S/.test(line) && cur.items.length) cur.items[cur.items.length - 1] += ` ${line.trim()}`;
+    let task: (typeof sections)[number]["tasks"][number] | null = null;
+    let fence = "";
+    let fencedTask = false;
+    for (const [i, line] of lines.entries()) {
+      const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+      if (fence) {
+        if (fencedTask && task) task.end = i + 1;
+        if (marker?.startsWith(fence) && /^ {0,3}(?:`+|~+)\s*$/.test(line)) {
+          fence = "";
+          fencedTask = false;
+        }
+        continue;
+      }
+      if (marker) {
+        fence = marker;
+        fencedTask = !!task && line.startsWith("  ");
+        if (fencedTask && task) task.end = i + 1;
+        else task = null;
+        continue;
+      }
+      if (/^#{1,6}\s/.test(line)) {
+        if (cur) cur.end = i;
+        const h = /^##\s+(?:\d+\.\s*)?(.+?)\s*$/.exec(line);
+        cur = h ? { name: h[1], key: Object.keys(DocSystem.TODO_SECTIONS).find((k) => DocSystem.TODO_SECTIONS[k] === h[1]) ?? null, start: i, end: lines.length, tasks: [] } : null;
+        if (cur) sections.push(cur);
+        task = null;
+      } else if (cur && /^- /.test(line)) {
+        task = { text: line.slice(2), start: i, end: i + 1 };
+        cur.tasks.push(task);
+      } else if (task && /^\s+\S/.test(line)) {
+        task.text += ` ${line.trim()}`;
+        task.end = i + 1;
+      } else if (line.trim()) task = null;
     }
-    return sections;
+    return { sections, unclosedFence: !!fence };
+  }
+  private todoSnapshot() {
+    const path = this.abs(this.cfg.docs.todo);
+    const text = read(path);
+    const eol = text.includes("\r\n") ? "\r\n" : "\n";
+    const lines = text ? text.split(/\r?\n/) : [];
+    return { path, text, eol, lines, ...this.parseTodo(lines) };
+  }
+  todo(snapshot = this.todoSnapshot()) {
+    return snapshot.sections.map(({ name, key, tasks }) => ({ name, key, items: tasks.map((item) => item.text) }));
+  }
+  private insertTodo(lines: string[], section: string, block: string[]) {
+    const name = DocSystem.TODO_SECTIONS[section];
+    const { sections, unclosedFence } = this.parseTodo(lines);
+    if (unclosedFence) throw new Error("待办文档有未结束的代码块，请修复后重试");
+    const matches = sections.filter((s) => s.key === section);
+    if (matches.length > 1) throw new Error(`有多个 ${name} 分组，请合并后重试`);
+    const target = matches[0];
+    if (!target) {
+      while (lines.length && !lines.at(-1)!.trim()) lines.pop();
+      if (lines.length) lines.push("");
+      lines.push(`## ${name}`, "", ...block, "");
+      return;
+    }
+    let at = target.end;
+    while (at > target.start + 1 && !lines[at - 1].trim()) at--;
+    lines.splice(at, 0, ...(at === target.start + 1 ? [""] : []), ...block);
   }
   addTodo(section: string, item: string) {
-    const name = DocSystem.TODO_SECTIONS[section];
-    if (!name) throw new Error("分组只能是 backlog、doing、testing");
+    if (!["backlog", "doing", "testing"].includes(section)) throw new Error("分组只能是 backlog、doing、testing");
     const clean = item.replace(/\s+/g, " ").trim();
     if (!clean) throw new Error("内容不能为空");
-    const path = this.abs(this.cfg.docs.todo);
-    const lines = read(path).split("\n");
-    let h = lines.findIndex((l) => new RegExp(`^##\\s+(?:\\d+\\.\\s*)?${name}\\s*$`).test(l));
-    if (h < 0) {
-      lines.push("", `## ${name}`, "");
-      h = lines.length - 2;
-    }
-    let at = lines.findIndex((l, i) => i > h && /^#{1,2}\s/.test(l));
-    if (at < 0) at = lines.length;
-    while (at > h + 1 && !lines[at - 1].trim()) at--;
-    lines.splice(at, 0, `- ${clean}`);
-    write(path, lines.join("\n"));
+    const { path, lines, eol } = this.todoSnapshot();
+    this.insertTodo(lines, section, [`- ${clean}`]);
+    write(path, lines.join(eol));
+  }
+  moveTodo(from: string, number: number, to: string, evidence: string, version?: string) {
+    if (![from, to].every((k) => Object.hasOwn(DocSystem.TODO_SECTIONS, k)) || from === to) throw new Error("请选择两个不同的待办分组");
+    const proof = evidence.replace(/\s+/g, " ").trim();
+    if (to === "done" && !proof) throw new Error("标记完成前请填写验收证据");
+    const { path, text, eol, lines, sections, unclosedFence } = this.todoSnapshot();
+    if (unclosedFence) throw new Error("待办文档有未结束的代码块，请修复后重试");
+    if (version !== undefined && version !== versionOf(text)) throw Object.assign(new Error("待办已在别处更新，请确认当前顺序后重试"), { status: 409 });
+    const source = sections.filter((s) => s.key === from);
+    if (source.length !== 1) throw new Error("没有唯一的来源分组");
+    const task = source[0].tasks[number - 1];
+    if (!Number.isInteger(number) || !task) throw new Error("待办编号不存在");
+    const block = lines.splice(task.start, task.end - task.start);
+    if (to === "done") block.push(`  验收证据：${proof}`);
+    this.insertTodo(lines, to, block);
+    write(path, lines.join(eol));
   }
 
   // ---------- files for the board ----------
@@ -186,11 +247,13 @@ export class DocSystem {
   }
   overview() {
     const d = this.cfg.docs;
+    const todo = this.todoSnapshot();
     const files = (dir: string) => this.listFiles(dir).filter((f) => !/(^|\/)(README|AGENTS)\.md$/.test(f.name));
     return {
       paths: d,
       questions: this.questions(),
-      todo: this.todo(),
+      todo: this.todo(todo),
+      todoVersion: versionOf(todo.text),
       totest: files(d.totest),
       requests: files(d.requests),
       sketches: this.listFiles(d.sketches, [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".md"]).filter((f) => !/(^|\/)README\.md$/.test(f.name)),

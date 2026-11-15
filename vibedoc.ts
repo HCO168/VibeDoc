@@ -1,5 +1,5 @@
 // VibeDoc command line. Run inside the repository it manages (or set VIBEDOC_REPO).
-//   vibedoc init [--name <名称>] [--modules auth,profile] [--features]
+//   vibedoc init [--name <名称>] [--preset <编号>] [--modules auth,profile] [--features]
 //                                   create vibedoc.config.json, the document tree, CLAUDE.md and the AGENTS.md rule blocks,
 //                                   starting from standard modules (with --features also their feature document drafts)
 //   vibedoc serve [--only]          start the board for every registered project (--only: just this repository)
@@ -20,7 +20,7 @@ import { renderTemplate, syncAgents, templateVars } from "./agents.ts";
 import { addProject, listProjects, projectIds, removeProject } from "./registry.ts";
 import { loadPlugins, pluginContext, pluginRules } from "./plugins.ts";
 import { addModule, addPlugin } from "./configedit.ts";
-import { applyStandardModules, loadCatalog } from "./catalog.ts";
+import { applyStandardModules, loadCatalog, loadPresets, projectPreset, resolveStandardModules } from "./catalog.ts";
 import { installSkill, scaffoldPlugin, skillDir } from "./skill.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,17 +57,21 @@ async function init() {
   const root = process.cwd();
   const i = rest.indexOf("--name");
   const name = i >= 0 && rest[i + 1] ? rest[i + 1] : basename(root);
+  const presetId = flag("--preset");
+  const preset = presetId !== undefined ? projectPreset(presetId) : null;
+  const ids = flag("--modules") !== undefined ? option("--modules") : (preset?.modules ?? []);
+  resolveStandardModules(ids); // Validate the entire selection before creating any files.
   const file = join(root, CONFIG_FILE);
   if (existsSync(file)) {
     console.log(`${CONFIG_FILE} 已存在，未改动。`);
   } else {
     // With standard modules chosen the project starts from those instead of a single "app" module.
-    const config = { name, port: 4870, language: "简体中文", modules: option("--modules").length ? {} : { app: name }, git: { promotion: ["dev", "main"], branchPrefix: "codex/" } };
+    const config = { name, port: 4870, language: "简体中文", modules: (ids.length || preset) ? {} : { app: name }, git: { promotion: ["dev", "main"], branchPrefix: "codex/" } };
     writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
     console.log(`已创建 ${CONFIG_FILE}`);
   }
-  if (option("--modules").length) {
-    const added = applyStandardModules(root, loadConfig(root), option("--modules"), rest.includes("--features"));
+  if (ids.length) {
+    const added = applyStandardModules(root, loadConfig(root), ids, rest.includes("--features"));
     if (added.length) console.log(`已加入标准模块：${added.join("、")}`);
   }
   const cfg = loadConfig(root);
@@ -115,22 +119,38 @@ async function pluginCommand(name: string | undefined): Promise<boolean> {
   return false;
 }
 
-const option = (name: string) => {
+const flag = (name: string) => {
   const i = rest.indexOf(name);
-  return i >= 0 ? (rest[i + 1] ?? "").split(",").map((x) => x.trim()).filter(Boolean) : [];
+  if (i < 0) return undefined;
+  const value = rest[i + 1];
+  if (value === undefined || value.startsWith("--")) throw new Error(`${name} 缺少参数`);
+  return value;
 };
+const option = (name: string) => (flag(name) ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 
-if (command === "init") {
-  await init();
+if (command === "init" || command === "preset") {
+  try {
+    if (command === "init") await init();
+    else if (rest[0] === "show") {
+      const preset = projectPreset(rest[1] ?? "");
+      console.log(`${preset.title}（${preset.id}）\n${preset.description}`);
+      for (const m of resolveStandardModules(preset.modules)) console.log(`  ${m.id.padEnd(16)} ${m.title}　${m.description}`);
+    } else if (rest[0] === "list") {
+      for (const p of loadPresets()) console.log(`${p.id.padEnd(18)} ${p.title}　${p.description}`);
+    } else throw new Error("用法：vibedoc preset list | show <编号>");
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  }
 } else if (command === "module" && rest[0] === "catalog") {
   for (const g of loadCatalog()) {
     console.log(`## ${g.title}`);
     for (const m of g.modules) console.log(`  ${m.id.padEnd(14)} ${m.title}　${m.description}`);
   }
-} else if (command === "module" && rest[0] === "add" && rest.includes("--standard")) {
+} else if (command === "module" && rest[0] === "add" && (rest.includes("--standard") || rest.includes("--preset"))) {
   try {
     const root = findRoot();
-    const added = applyStandardModules(root, loadConfig(root), option("--standard"), rest.includes("--features"));
+    const added = applyStandardModules(root, loadConfig(root), rest.includes("--standard") ? option("--standard") : projectPreset(flag("--preset")!).modules, rest.includes("--features"));
     console.log(added.length ? `已新增标准模块：${added.join("、")}` : "这些模块都已存在");
   } catch (error) {
     console.error((error as Error).message);
@@ -190,6 +210,6 @@ if (command === "init") {
   process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
   await import(join(here, SUBCOMMANDS[command]));
 } else if (!(await pluginCommand(command))) {
-  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | module add|catalog | plugins [add|new] | skill install|path | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
+  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
   process.exitCode = command ? 1 : 0;
 }

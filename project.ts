@@ -283,6 +283,11 @@ export class Project {
     }
     if (req.method === "POST" && path === "/docs/requests") return done("docs", 201, { path: docs.saveRequest(String(data.name ?? ""), String(data.text ?? "")) });
     if (req.method === "POST" && path === "/docs/sketches") return done("docs", 201, { path: docs.saveSketch(query.get("name") ?? "", data as Buffer) });
+    if (req.method === "POST" && path === "/docs/todo/move") {
+      if (typeof data.version !== "string") return send(res, 400, { error: "缺少待办版本，请刷新后重试" });
+      docs.moveTodo(String(data.from ?? ""), Number(data.number), String(data.to ?? ""), String(data.evidence ?? ""), data.version);
+      return done("docs", 200, { success: true });
+    }
     if (req.method === "POST" && path === "/docs/todo") {
       docs.addTodo(String(data.section ?? ""), String(data.item ?? ""));
       return done("docs", 201, { success: true });

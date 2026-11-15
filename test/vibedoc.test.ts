@@ -377,3 +377,49 @@ test("standard modules, plugin scaffold and the AI skill", async () => {
   assert.match(read(join(E, ".claude/skills/vibedoc-plugin/SKILL.md")), /^---\nname: vibedoc-plugin/);
   assert.ok(existsSync(join(E, ".claude/skills/vibedoc-plugin/references/examples.md")));
 });
+
+test("web and game presets can be previewed and customized without partial writes", async () => {
+  const cat = (await api("GET", "/api/module-catalog")).json;
+  const known = new Set(cat.groups.flatMap((g: any) => g.modules.map((m: any) => m.id)));
+  assert.equal(new Set(cat.presets.map((p: any) => p.id)).size, 8);
+  for (const p of cat.presets) assert.ok(p.modules.every((id: string) => known.has(id)), p.id);
+  assert.match(vibedoc(tmp, "preset", "show", "website").out, /accessibility\s+响应式与无障碍/);
+  const W = join(tmp, "preset-web"), G = join(tmp, "preset-game");
+  mkdirSync(W);
+  mkdirSync(G);
+  assert.equal(vibedoc(W, "init", "--preset", "invalid").code, 1);
+  assert.equal(vibedoc(W, "init", "--preset", "website", "--modules", "content,bad").code, 1);
+  assert.ok(!existsSync(join(W, "vibedoc.config.json")));
+  assert.equal(vibedoc(W, "init", "--preset", "website", "--features").code, 0);
+  assert.deepEqual(Object.keys(JSON.parse(read(join(W, "vibedoc.config.json"))).modules), cat.presets.find((p: any) => p.id === "website").modules);
+  const contentFile = join(W, "doc/features/content.md");
+  write(contentFile, "# 自己维护的内容文档\n");
+  assert.equal(vibedoc(W, "module", "add", "--preset", "community-site", "--features").code, 0);
+  assert.equal(read(contentFile), "# 自己维护的内容文档\n");
+  assert.ok(existsSync(join(W, "doc/features/community.md")));
+  const added = await api("POST", "/api/projects", { path: G, init: true, preset: "simulation-game", modules: ["gameplay", "simulation", "playtest"], features: true });
+  assert.equal(added.status, 201);
+  assert.deepEqual(Object.keys(JSON.parse(read(join(G, "vibedoc.config.json"))).modules), ["gameplay", "simulation", "playtest"]);
+  assert.match(read(join(G, "doc/features/simulation.md")), /### 模拟规则\n<!-- feature:simulation-f1 status=new/);
+});
+
+test("todo changes preserve Markdown, reject stale moves, and record completion evidence", async () => {
+  const doc = join(B, "doc/todo.md");
+  const original = read(doc);
+  try {
+    write(doc, "# 待办\r\n\r\n## 1. Backlog\r\n\r\n- 首次登录\r\n  - 保留原有步骤\r\n  ```text\r\n  - 代码示例\r\n  ```\r\n\r\n## In Progress\r\n\r\n## Under Test\r\n\r\n## 团队笔记\r\n\r\n- 不移动这行\r\n");
+    const snapshot = async () => (await api("GET", "/api/p/beta/docs")).json;
+    const move = (version: string, from: string, to: string, evidence = "") => api("POST", "/api/p/beta/docs/todo/move", { from, to, version, evidence, number: 1 });
+    const version = (await snapshot()).todoVersion;
+    assert.equal((await move(version, "backlog", "doing")).status, 200);
+    assert.equal((await move(version, "doing", "testing")).status, 409);
+    assert.equal(vibedoc(B, "todo", "move", "doing", "1", "testing").code, 0);
+    const current = (await snapshot()).todoVersion;
+    assert.equal((await move(current, "testing", "done")).status, 400);
+    assert.equal((await move(current, "testing", "done", "登录回归用例通过")).status, 200);
+    assert.match(read(doc), /## Done\r\n\r\n- 首次登录\r\n  - 保留原有步骤\r\n  ```text\r\n  - 代码示例\r\n  ```\r\n  验收证据：登录回归用例通过/);
+    assert.match(read(doc), /## 团队笔记\r\n\r\n- 不移动这行/);
+  } finally {
+    write(doc, original);
+  }
+});

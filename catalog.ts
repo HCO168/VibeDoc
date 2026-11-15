@@ -13,27 +13,41 @@ import { RuleStore, kindsFor } from "./rules/store.ts";
 export type StandardModule = { id: string; title: string; description: string; features: { title: string; body: string }[] };
 export type CatalogGroup = { id: string; title: string; modules: StandardModule[] };
 
+export type ProjectPreset = { id: string; group: "web" | "game"; title: string; description: string; modules: string[] };
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function loadCatalog(): CatalogGroup[] {
   return JSON.parse(readFileSync(join(here, "templates/modules/catalog.json"), "utf8")).groups;
 }
 
-export function standardModule(id: string): StandardModule | undefined {
-  for (const g of loadCatalog()) for (const m of g.modules) if (m.id === id) return m;
-  return undefined;
+export function loadPresets(): ProjectPreset[] {
+  return JSON.parse(readFileSync(join(here, "templates/modules/presets.json"), "utf8"));
+}
+
+export function projectPreset(id: string): ProjectPreset {
+  const preset = loadPresets().find((p) => p.id === id);
+  if (!preset) throw new Error(`没有项目预设 ${id}（vibedoc preset list 查看全部）`);
+  return preset;
+}
+
+export function resolveStandardModules(ids: string[]): StandardModule[] {
+  const catalog = new Map(loadCatalog().flatMap((g) => g.modules.map((m) => [m.id, m])));
+  return [...new Set(ids)].map((id) => {
+    const m = catalog.get(id);
+    if (!m) throw new Error(`没有标准模块 ${id}（vibedoc module catalog 查看全部）`);
+    return m;
+  });
 }
 
 // Adds the given standard modules that the project does not have yet; returns the ids added.
 // `cfg` must be re-read by the caller afterwards when it keeps using it.
 export function applyStandardModules(root: string, cfg: Config, ids: string[], withFeatures: boolean): string[] {
   const added: string[] = [];
-  for (const id of ids) {
-    const m = standardModule(id);
-    if (!m) throw new Error(`没有标准模块 ${id}（vibedoc module catalog 查看全部）`);
-    if (!loadModules(root, cfg).modules.some((x) => x.id === id)) {
+  for (const m of resolveStandardModules(ids)) {
+    if (!loadModules(root, cfg).modules.some((x) => x.id === m.id)) {
       addModule(root, cfg, { id: m.id, title: m.title });
-      added.push(id);
+      added.push(m.id);
     }
     if (withFeatures) writeFeatureDraft(root, cfg, m);
   }

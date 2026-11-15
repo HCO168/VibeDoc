@@ -39,11 +39,11 @@
 
 - **规则看板**：规则按 新提出、待你确认、进行中、已修改、已实现 分列，另有搁置区；卡片可编辑，待你确认的可「确认计划，开始做」或「退回」。
 - **功能文档**：整篇渲染阅读，每条功能旁显示状态（新提出、待你确认、开发中、已持久化、已上线、已修改、搁置）；「编辑文档」或双击正文整篇编辑，⌘／Ctrl+S 保存，按标题保留每条功能的编号与状态。「提新功能」快速提一条。
-- **项目管理**：待决问题（直接在页面上作答）、待办（可添加）、待验收、目标记录、变更日志（按日期、可搜索、点开看全文）、需求原话（新建与编辑）、UI 草图（上传图片或 PDF、缩略图浏览）、交付说明、文档入口；AI 规则区块过期时顶部提醒。
+- **项目管理**：总览按「定义范围 → 规划功能 → 跟踪开发 → 验收与交付」汇总进度并提供入口；待决问题（直接作答）、待办看板（新增、移动、填写验收证据后完成）、待验收、目标记录、变更日志（按日期、可搜索、点开看全文）、需求原话（新建与编辑）、UI 草图（上传图片或 PDF、缩略图浏览）、交付说明、文档入口；AI 规则区块过期时顶部提醒。
 - **代码地图**（需配置 `codemap`）：前端、API、后端、数据库、结构体五个标签，各按自己的方式分组；接口直接显示请求与响应字段；每行可「提要求」写规则，或在关系图中查看。「数据库」标签里可以「新建表」「改表」，表单旁实时显示 SQL 草稿。
 - **关系图**（需配置 `codemap`）：页面 → 接口（递归展开数据体）→ 处理函数调用链 → 读写的表；也可从任一接口、函数、结构体或表出发。
 
-**新增入口**：能新增的东西都有「＋」按钮——顶栏「＋ 项目」（已有 VibeDoc 的文件夹，或勾选后就地 `vibedoc init`）；规则看板、功能文档侧栏、新建规则／提新功能表单里的「＋ 新模块」（有 `modulesFile` 时写进 `modules.yaml` 并排在最前，可同时填代码路径；否则写进配置的 `modules`）；项目管理里的新增问题、待办、待验收、目标、变更日志、需求、草图、交付说明；「项目设置」里列出模块与插件，可新增模块、登记插件、增加或移除项目（移除只是不再显示，文件不动）。
+**新增入口**：能新增的东西都有「＋」按钮——顶栏「＋ 项目」（已有 VibeDoc 的文件夹，或选择预设后就地初始化）；规则看板、功能文档侧栏、新建规则／提新功能表单里的「＋ 新模块」（有 `modulesFile` 时写进 `modules.yaml` 并排在最前，可同时填代码路径；否则写进配置的 `modules`）；项目管理里的新增问题、待办、待验收、目标、变更日志、需求、草图、交付说明；「项目设置」里列出模块与插件，可新增模块、登记插件、增加或移除项目（移除只是不再显示，文件不动）。
 
 文件或代码变化时页面实时刷新。
 
@@ -145,14 +145,29 @@ modules:
 
 `examples/` 里有一份真实项目的配置可参考。
 
-## 标准模块
+## 项目预设与标准模块
 
-`templates/modules/catalog.json` 是从真实项目里抽出的常用模块，分三组：通用（概述与发布、界面、公共与站点框架）、Web 应用（账号与安全、个人资料、设置、通知、站内信、支持与反馈、管理后台、文件与存储、聊天、日历、内容发布、短链接）、游戏（核心玩法、世界与地图、经济与资源、成长与进度）。每个模块有一句说明和几条常见功能。
+看板「＋ 项目 → 首次使用 VibeDoc」可以先选一套预设，再展开调整勾选项。预设只准备项目配置和文档，不会安装框架、生成可运行的网站或游戏，也不会覆盖现有的功能文档。
 
-- 新建项目时预选：`vibedoc init --modules a,b [--features]`，或看板「＋ 项目」勾选「就地初始化」后勾选模块。
-- 之后再加：看板任意「＋ 新模块」里的「从标准模块中选」，或 `vibedoc module add --standard a,b [--features]`；已有的模块会跳过。
-- `--features`（或表单里的勾选项）为每个模块生成功能文档草稿：常见功能放在「常见功能（待确认）」分组，状态为「新提出」，按项目实际情况修改或删除。
-- `vibedoc module catalog` 列出全部标准模块。要增加或调整标准模块，改 `catalog.json` 即可。
+| 项目类型 | 预设 |
+| --- | --- |
+| 网站 | 展示与营销网站（`website`）、会员与 SaaS 应用（`web-app`）、电商与订单网站（`store`）、内容与社区网站（`community-site`） |
+| 游戏 | 游戏原型与 Game Jam（`game-jam`）、单机冒险与角色扮演（`single-player`）、多人合作与竞技（`multiplayer-game`）、经营、建造与模拟（`simulation-game`） |
+
+```bash
+vibedoc preset list
+vibedoc preset show simulation-game
+vibedoc init --preset simulation-game --features
+vibedoc init --preset website --modules core,content,accessibility --features
+vibedoc module add --preset web-app --features   # 给已有项目补模块
+```
+
+- `init --modules` 可单独使用；与 `--preset` 同用时，显式模块列表替代预设的推荐列表。
+- 看板「＋ 新模块」支持从预设挑选模块，也可以逐个选标准模块。CLI 用 `vibedoc module catalog` 查看标准模块，用 `vibedoc module add --standard a,b` 补选。
+- `--features` 或表单勾选项会为尚无功能文档的模块生成「新提出」草稿。现有编号、状态和文档会保留。
+- 标准模块定义在 `templates/modules/catalog.json`；成套组合定义在 `templates/modules/presets.json`。
+
+工程启动后打开「项目管理 → 总览」，用需求与草图确定范围，完善功能文档，再用待办看板跟踪工作。待办看板分为待开发、进行中、待验收和已完成；标记完成时填写验证结果或记录路径。看板和 CLI 共用 `doc/todo.md`，已有项目首次完成一项时会自动补上 `Done` 节。
 
 ## 插件
 
@@ -199,12 +214,15 @@ vibedoc features list [--all] [模块] | show <id> | set <状态> <id...> | summ
 vibedoc tables list [--all] [schema] | show <id> | sql <id> | set <状态> <id...> | refresh
 vibedoc changelog new --role <角色> --slug <英文短名> | list [N]
 vibedoc question list | add "<问题>" [--body "<说明>"] | resolve <编号>
-vibedoc todo list | add <backlog|doing|testing> "<内容>"
+vibedoc todo list [--numbered] | add <backlog|doing|testing> "<内容>"
+vibedoc todo move <来源> <分组内编号> <目标> [--evidence "<验收结果或记录路径>"]
 vibedoc totest list
 vibedoc agents sync | check
 vibedoc plugins [add <路径> | new <名称> [--title 标签] [--view]]
 vibedoc module add <编号> <名称> [--backend a,b] [--frontend a,b] [--schemas a,b]
 vibedoc module add --standard a,b [--features] | module catalog
+vibedoc preset list | show <编号>
+vibedoc module add --preset <编号> [--features]
 vibedoc skill install [--codex | --project] | skill path
 vibedoc codemap generate | fn <名称> | route <路径片段>
 ```
@@ -214,6 +232,7 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 - 表变更：状态 `new` `confirm` `doing` `done`（迁移已合入）`parked`；`show` 输出条目、SQL 草稿和迁移目录，`sql` 只输出草稿。
 - 变更日志：`new` 生成当天目录下带时间、角色和短名的文件骨架（变更内容、影响范围、验证），打印路径供 AI 填写。
 - 待决问题：`add` 追加编号问题；用户在看板或文件里作答后，`list` 显示答复；AI 把结论写进行为文档后 `resolve` 删除该条。
+- 待办：先用 `todo list --numbered` 获取分组键和编号。用 `todo move testing 1 done --evidence "测试环境回归通过"` 完成待验收列表的第一项。已完成的待办也可以移回开发或验收。
 - `agents check` 在规则区块缺失或过期时以非零状态退出，可放进检查脚本。
 - 代码地图：`generate` 把每个模块 × 前端／API／后端／数据库／结构体写成 Markdown，并输出 `codemap.json`；`fn`、`route` 查询调用方、路由和表。
 
@@ -233,7 +252,7 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `docs/store.ts`、`docs/cli.ts` | 变更日志、待决问题、待办、待验收、需求与草图的读写和命令 |
 | `plugins.ts` | 加载项目插件、插件规则 |
 | `configedit.ts` | 新增模块（`modules.yaml` 或配置）、登记插件 |
-| `catalog.ts`、`templates/modules/catalog.json` | 标准模块目录及其加入（含功能文档草稿） |
+| `catalog.ts`、`templates/modules/` | 项目预设、标准模块与功能文档草稿 |
 | `skill.ts`、`skills/vibedoc-plugin/` | 写插件的 AI skill、`skill install`、插件骨架 `plugins new` |
 | `test/vibedoc.test.ts` | 端到端测试 |
 | `codemap/` | 代码地图：Rust 词法扫描、迁移重放与 SQL 引用、前端 API 调用识别、serde 字段换算、YAML 子集解析、Markdown／JSON 输出 |

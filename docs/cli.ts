@@ -4,7 +4,7 @@
 //   vibedoc question list                               open questions, with the user's answers
 //   vibedoc question add "<问题>" [--body "<说明>"]      add an open question for the user
 //   vibedoc question resolve <编号>                      remove a question once its conclusion is in the behavior docs
-//   vibedoc todo list | add <backlog|doing|testing> "<内容>"
+//   vibedoc todo list [--numbered] | add <backlog|doing|testing> "<内容>" | move <来源> <编号> <目标> [--evidence "<证据>"]
 //   vibedoc totest list                                 outstanding QA handoff files
 //   vibedoc agents sync | check                         write or check the shared rule blocks in AGENTS.md
 import { DocSystem } from "./store.ts";
@@ -44,13 +44,18 @@ try {
     docs.resolveQuestion(Number(positional[0]));
     console.log(`已删除第 ${positional[0]} 个问题`);
   } else if (group === "todo" && command === "list") {
+    const numbered = args.includes("--numbered");
     for (const s of docs.todo()) {
-      console.log(`## ${s.name}（${s.items.length}）`);
-      for (const i of s.items) console.log(`- ${i}`);
+      console.log(`## ${s.name}（${s.items.length}）${numbered && s.key ? ` [${s.key}]` : ""}`);
+      s.items.forEach((item, i) => console.log(numbered ? `  ${i + 1}. ${item}` : `- ${item}`));
     }
   } else if (group === "todo" && command === "add") {
     docs.addTodo(positional[0], positional.slice(1).join(" "));
     console.log(`已加入 ${cfg.docs.todo}`);
+  } else if (group === "todo" && command === "move") {
+    const [from, n, to] = positional;
+    docs.moveTodo(from, Number(n), to, flag("--evidence") ?? "");
+    console.log(`已移动 ${cfg.docs.todo} 中的待办`);
   } else if (group === "totest" && command === "list") {
     for (const f of docs.listFiles(cfg.docs.totest)) if (!/(README|AGENTS)\.md$/.test(f.name)) console.log(f.path);
   } else if (group === "agents" && (command === "sync" || command === "check")) {
@@ -62,7 +67,7 @@ try {
     if (command === "check" && results.some((r) => r.state === "stale" || r.state === "missing")) process.exitCode = 1;
     if (results.some((r) => r.state === "inserted")) console.log("提示：区块插在已有文件里，请删除区块外与之重复的通用规则，只留本项目专属规则。");
   } else {
-    console.log("用法：vibedoc changelog new|list · question list|add|resolve · todo list|add · totest list · agents sync|check");
+    console.log("用法：vibedoc changelog new|list · question list|add|resolve · todo list|add|move · totest list · agents sync|check");
     process.exitCode = group ? 1 : 0;
   }
 } catch (error) {

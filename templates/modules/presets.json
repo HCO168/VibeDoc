@@ -1,0 +1,58 @@
+[
+  {
+    "id": "website",
+    "group": "web",
+    "title": "展示与营销网站",
+    "description": "适合官网、作品集、活动页和产品落地页，重点是内容、访问体验和搜索收录。",
+    "modules": ["core", "ui", "platform", "content", "discovery", "accessibility", "quality", "operations"]
+  },
+  {
+    "id": "web-app",
+    "group": "web",
+    "title": "会员与 SaaS 应用",
+    "description": "适合需要注册登录、个人设置、后台管理与线上运维的网站。",
+    "modules": ["core", "ui", "platform", "auth", "profile", "settings", "admin", "support", "accessibility", "quality", "operations"]
+  },
+  {
+    "id": "store",
+    "group": "web",
+    "title": "电商与订单网站",
+    "description": "适合商品展示、购物车、下单、交易与售后流程。",
+    "modules": ["core", "ui", "platform", "auth", "commerce", "payments", "support", "admin", "accessibility", "quality", "operations"]
+  },
+  {
+    "id": "community-site",
+    "group": "web",
+    "title": "内容与社区网站",
+    "description": "适合新闻、文章、论坛和创作者社区，包含发布与治理流程。",
+    "modules": ["core", "ui", "platform", "auth", "profile", "content", "community", "discovery", "notifications", "accessibility", "quality", "operations"]
+  },
+  {
+    "id": "game-jam",
+    "group": "game",
+    "title": "游戏原型与 Game Jam",
+    "description": "用最少的模块做出可试玩的核心循环，并验证操作、资产与构建。",
+    "modules": ["core", "gameplay", "controls", "assets", "playtest", "release_game"]
+  },
+  {
+    "id": "single-player",
+    "group": "game",
+    "title": "单机冒险与角色扮演",
+    "description": "适合有地图探索、关卡、成长和存档的单机游戏。",
+    "modules": ["core", "gameplay", "world", "levels", "progression", "controls", "assets", "playtest", "release_game"]
+  },
+  {
+    "id": "multiplayer-game",
+    "group": "game",
+    "title": "多人合作与竞技",
+    "description": "适合需要大厅、匹配、同步、重连和服务器运维的游戏。",
+    "modules": ["core", "gameplay", "multiplayer", "levels", "controls", "assets", "playtest", "release_game", "operations"]
+  },
+  {
+    "id": "simulation-game",
+    "group": "game",
+    "title": "经营、建造与模拟",
+    "description": "适合强调生产网络、资源平衡、科技解锁和长期存档的游戏。",
+    "modules": ["core", "gameplay", "world", "economy", "progression", "simulation", "controls", "assets", "playtest", "release_game"]
+  }
+]

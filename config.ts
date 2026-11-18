@@ -30,6 +30,7 @@ export type DocsLayout = {
   goals: string; // multi-step goals and their open decisions
   totest: string; // outstanding manual QA handoffs
   changelogs: string; // dated change logs: <date>/<HHMMSS>_<role>_<slug>.md
+  deploylogs: string; // deployment and acceptance records: history only, never indexed
   expired: string; // superseded documents
 };
 
@@ -106,6 +107,7 @@ export function loadConfig(root: string): Config {
       goals: str(d.goals, `${docRoot}/goal_logs.md`),
       totest: str(d.totest, `${docRoot}/totest`),
       changelogs: str(d.changelogs, `${docRoot}/change_logs`),
+      deploylogs: str(d.deploylogs, `${docRoot}/deploy_logs`),
       expired: str(d.expired, `${docRoot}/expired`),
     },
     git: { promotion: promotion.length ? promotion : ["dev", "main"], branchPrefix: str(raw.git?.branchPrefix, "codex/") },

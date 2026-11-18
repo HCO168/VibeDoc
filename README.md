@@ -61,6 +61,9 @@
 
   字段名都是常见英文单词，读起来一个词一个 token。`uses`、`api`、`reads`、`writes`、`defines` 每次按代码重新生成，不会和代码不符；只有 `role`（职责）和 `note`（约束与坑）由 AI 写，重新生成时保留。
 - **过期账本** `doc/index/ledger.json`（随代码提交）：每段描述连同它所描述对象的内容哈希一起记录——函数的 `///` 注释对应函数体，索引行的 role/note 对应源文件，行为与契约文档的小节对应它在标题下 `<!-- refs: 条目编号 文件::函数名 源码路径 table:schema.表 -->` 里列出的每个对象。对象变了而描述没变，就是过期；两者一起改了算已更新。引用的对象不存在会报「失效引用」。
+  - 引用项可以是功能/规则/表变更条目编号、函数（`文件::函数名`，重名时写完整编号）、源码文件、目录（目录下任一文件增删改都算变化）和表（`table:schema.表`）。
+  - 小节是 `#`、`##`、`###` 标题下到下一个标题之前的正文；一级标题下的开头正文也是一个小节，键名为 `文档路径#一级标题`。
+  - 只有常量或 `static` 的 Rust 文件也有索引行；`changelogs`、`deploylogs`、`expired` 和索引目录即使位于行为或契约目录之下也不扫描。
 - **完成门禁**（`index.gate`，默认开启）：`vibedoc features set done <id> --impl 文件::函数,...` 和 `vibedoc rules mark <id> --impl ...` 先检查：实现函数的注释是否过期或缺失、所在文件的索引行是否缺 role 或过期、是否有行为文档小节引用这个条目、引用它的小节是否过期。有问题就拒绝并列出清单；通过后改状态并刷新索引与总览。确实不需要更新时加 `--skip "原因"`，原因和当时的问题清单记进账本。
 
 于是 AI 的工作链是：需求条目 → 写代码 → 更新函数注释、索引行和行为文档 → 标记完成（门禁检查）→ 总览自动更新。
@@ -147,7 +150,7 @@ vibedoc serve       # 或打开 VibeDoc App
 | `language` | AI 回复与写文档用的语言，写进规则区块 |
 | `git.promotion` | 发布链：第一个是集成分支，最后一个是发布分支，默认 `["dev", "main"]` |
 | `git.branchPrefix` | AI 任务分支前缀，默认 `codex/` |
-| `docs.root` | AI 维护区根目录，默认 `doc`；其余位置默认在它下面，也可单独指定：`human`、`requests`、`sketches`、`questions`、`deliverables`、`behavior`、`contracts`（数组）、`todo`、`roadmap`、`goals`、`totest`、`changelogs`、`expired` |
+| `docs.root` | AI 维护区根目录，默认 `doc`；其余位置默认在它下面，也可单独指定：`human`、`requests`、`sketches`、`questions`、`deliverables`、`behavior`、`contracts`（数组）、`todo`、`roadmap`、`goals`、`totest`、`changelogs`、`deploylogs`（部署与验收记录，默认 `doc/deploy_logs`）、`expired` |
 | `rulesDir`、`featuresDir`、`tablesDir` | 规则、功能文档、表变更目录，默认 `doc/human/rules`、`doc/features`、`doc/table-changes` |
 | `modules` | 模块 `id → 标题`；只用文档功能时这样列出即可 |
 | `modulesFile` | 可选，`modules.yaml`：除标题外还声明每个模块拥有哪些代码文件（代码地图用来归属文件，格式见下） |

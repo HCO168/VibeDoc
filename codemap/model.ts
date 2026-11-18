@@ -89,6 +89,8 @@ export type Model = {
   frontRoutes: { path: string; component: string; file: string; target: string | null; module: string | null; line: number }[];
   backends: { id: string; file: string }[];
   unassigned: { backend: string[]; frontend: string[] };
+  // Every Rust source file of the configured crates, also those without functions or types (constants only).
+  rustFiles: string[];
 };
 
 const BUILTIN_TYPES = new Set([
@@ -179,12 +181,14 @@ export function buildModel(root: string, cfg: Config): Model {
   const fns = new Map<string, FnNode>();
   const types: TypeNode[] = [];
   const parsedFiles = new Map<string, { crate: string; modPath: string; parsed: RustFile }>();
+  const rustFiles: string[] = [];
   const index = new Map<string, Map<string, FnNode[]>>();
 
   for (const crate of cm.crates) {
     const src = join(root, crate.dir, "src");
     for (const abs of walkFiles(src, (p) => p.endsWith(".rs"))) {
       const rel = relative(root, abs);
+      rustFiles.push(rel);
       const modPath = modPathOf(relative(src, abs));
       const crateKey = modPath.startsWith("bin::") ? `${crate.lib}/${modPath}` : crate.lib;
       const parsed = parseRust(readFileSync(abs, "utf8"));
@@ -596,7 +600,7 @@ export function buildModel(root: string, cfg: Config): Model {
     }
   }
 
-  return { root, modules, fns, routes, types, typeById, typeRefs, schema, tableModule, functionModule, tableUsers, sqlFunctionUsers, front, frontRoutes, backends, unassigned };
+  return { root, modules, fns, routes, types, typeById, typeRefs, schema, tableModule, functionModule, tableUsers, sqlFunctionUsers, front, frontRoutes, backends, unassigned, rustFiles };
 }
 
 export function clientFnsOf(model: Model, file: string): ClientFn[] {

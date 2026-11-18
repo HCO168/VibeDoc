@@ -575,10 +575,33 @@ test("AI index: generation, freshness ledger and the completion gate", () => {
   assert.match(read(join(G, "doc/index/ledger.json")), /"item":"items-f2","reason":"只改了文案"/);
   assert.match(vibedoc(G, "index", "show", "backend/api/src/items.rs").out, /list_items[\s\S]*文档：doc\/behavior\/items\.md#列表/);
 
+  // Coverage: constants-only files, guarded renames, directory references, the body under the title, history skipped.
+  write(join(G, "backend/api/src/limits.rs"), "pub const MAX_ITEMS: usize = 10;\nconst SECRET_LEN: usize = 32;\n");
+  write(join(G, "backend/api/src/reexport.rs"), "pub use crate::items::helper;\n");
+  write(join(G, "backend/migrations/shop/0002_rename.sql"), "DO $$\nBEGIN\n  IF to_regclass('shop.listings') IS NULL THEN\n    ALTER TABLE shop.items RENAME TO listings;\n  END IF;\nEND $$;\n");
+  write(join(G, "doc/behavior/limits.md"), "# 限制\n<!-- refs: backend/api/src/ table:shop.listings -->\n条目最多十个。\n\n## 旧表\n<!-- refs: table:shop.items -->\n已改名。\n");
+  write(join(G, "doc/behavior/old/x.md"), "# 旧\n\n## 记录\n<!-- refs: items::gone -->\n历史。\n");
+  cfg.docs = { deploylogs: "doc/behavior/old" };
+  write(join(G, "vibedoc.config.json"), JSON.stringify(cfg, null, 2));
+  vibedoc(G, "index", "generate");
+  assert.match(read(indexFile), /^backend\/api\/src\/limits\.rs \[types\] role: \? \| defines: MAX_ITEMS$/m);
+  assert.doesNotMatch(read(indexFile), /reexport\.rs/);
+  out = vibedoc(G, "index", "stale").out;
+  assert.doesNotMatch(out, /limits\.md#限制/);
+  assert.match(out, /失效引用\s+doc\/behavior\/limits\.md#旧表[^\n]*table:shop\.items/);
+  assert.doesNotMatch(out, /old\/x\.md/);
+  assert.match(read(join(G, "doc/index/ledger.json")), /"doc\/behavior\/limits\.md#限制"/);
+  write(join(G, "backend/api/src/limits.rs"), "pub const MAX_ITEMS: usize = 20;\n");
+  assert.match(vibedoc(G, "index", "stale").out, /文档小节\s+doc\/behavior\/limits\.md#限制[^\n]*backend\/api\/src\//);
+  assert.match(vibedoc(G, "index", "show", "backend/api/src/limits.rs").out, /文档：doc\/behavior\/limits\.md#限制/);
+  write(join(G, "doc/behavior/limits.md"), "# 限制\n<!-- refs: backend/api/src/ table:shop.listings -->\n条目最多二十个。\n");
+  vibedoc(G, "index", "generate");
+
   // The rule blocks tell the AI about the index and the completion chain only when it is configured.
   vibedoc(G, "agents", "sync");
   assert.match(read(join(G, "AGENTS.md")), /`doc\/index\/` is the AI index[\s\S]*vibedoc index check <id>/);
   assert.match(read(join(G, "doc/AGENTS.md")), /`doc\/index\/` 是 AI 索引/);
+  assert.match(read(join(G, "doc/AGENTS.md")), /`doc\/behavior\/old\/` 部署与验收记录/);
   assert.doesNotMatch(read(join(A, "AGENTS.md")), /AI index/);
 });
 
@@ -591,7 +614,7 @@ test("server: document and code browser", async () => {
   assert.equal(projects.find((p) => p.id === "gamma")?.index, true);
   assert.equal(projects.find((p) => p.id === "alpha")?.index, false);
   const ix = (await api("GET", "/api/p/gamma/index")).json;
-  assert.equal(ix.counts.files, 3);
+  assert.equal(ix.counts.files, 4);
   const items = ix.entries.find((e: any) => e.path === "backend/api/src/items.rs");
   assert.equal(items.role, "条目列表接口");
   assert.ok(!("file" in items));

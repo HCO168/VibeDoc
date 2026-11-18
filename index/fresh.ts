@@ -76,7 +76,7 @@ export type Entry = {
   uses: string[]; api: string[]; reads: string[]; writes: string[]; defines: string[];
   file: string; text: string; state: State | "blank";
 };
-export type RefState = { ref: string; kind: "item" | "fn" | "file" | "table" | "missing"; target: string; hash: string | null };
+export type RefState = { ref: string; kind: "item" | "fn" | "file" | "dir" | "table" | "missing"; target: string; hash: string | null };
 export type Section = {
   key: string; doc: string; heading: string; line: number; refs: RefState[]; text: string;
   state: State; changed: string[];
@@ -134,18 +134,31 @@ function moduleRole(root: string, cfg: Config, id: string): string {
   return text.length > 160 ? `${text.slice(0, 159)}…` : text;
 }
 
-function walk(dir: string, out: string[] = []): string[] {
-  if (!existsSync(dir)) return out;
+function walk(dir: string, skip: Set<string>, out: string[] = []): string[] {
+  if (!existsSync(dir) || skip.has(dir)) return out;
   for (const name of readdirSync(dir).sort()) {
     if (name.startsWith(".")) continue;
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
+    if (statSync(p).isDirectory()) walk(p, skip, out);
     else if (name.endsWith(".md") && name !== "README.md" && name !== "AGENTS.md") out.push(p);
   }
   return out;
 }
 
 const REFS_RE = /<!--\s*refs:\s*(.*?)\s*-->/;
+// A top-level `const`/`static` item; group 1 is set when it is public.
+const CONST_RE = /^(pub(?:\([^)]*\))?\s+)?(?:const|static)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:/gm;
+
+// Every file under a directory, relative to the repository root, for directory references.
+function filesUnder(root: string, dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(join(root, dir)).sort()) {
+    if (name.startsWith(".") || name === "node_modules" || name === "target") continue;
+    const rel = `${dir}/${name}`;
+    if (statSync(join(root, rel)).isDirectory()) filesUnder(root, rel, out);
+    else out.push(rel);
+  }
+  return out;
+}
 
 export function scan(root: string, cfg: Config, model = buildModel(root, cfg)): Scan {
   if (!cfg.index) throw new Error("这个仓库没有启用 AI 索引：在 vibedoc.config.json 里加上 \"index\": {}（需要同时启用 codemap）。");
@@ -184,7 +197,15 @@ export function scan(root: string, cfg: Config, model = buildModel(root, cfg)): 
   for (const n of model.fns.values()) fnsOfFile.set(n.file, [...(fnsOfFile.get(n.file) ?? []), n]);
   const typesOfFile = new Map<string, string[]>();
   for (const t of model.types) if (t.type.vis === "pub") typesOfFile.set(t.file, [...(typesOfFile.get(t.file) ?? []), t.type.name]);
-  const paths = [...new Set([...fnsOfFile.keys(), ...typesOfFile.keys(), ...model.front.keys()])].sort();
+  // Rust files with neither functions nor public types still get a line when they declare constants or statics
+  // (permission tables, limits); files that only declare modules or re-export stay out.
+  const constsOfFile = new Map<string, string[]>();
+  for (const path of model.rustFiles) {
+    if (fnsOfFile.has(path) || typesOfFile.has(path)) continue;
+    const names = [...source(path).matchAll(CONST_RE)];
+    if (names.length) constsOfFile.set(path, names.filter((m) => m[1]).map((m) => m[2]));
+  }
+  const paths = [...new Set([...fnsOfFile.keys(), ...typesOfFile.keys(), ...constsOfFile.keys(), ...model.front.keys()])].sort();
   const short = shortNames(paths);
   const cap = (xs: string[], n: number) => (xs.length > n ? [...xs.slice(0, n), `+${xs.length - n}`] : xs);
   const entries = new Map<string, Entry>();
@@ -215,7 +236,7 @@ export function scan(root: string, cfg: Config, model = buildModel(root, cfg)): 
         for (const [t, w] of n.tables) (w ? writes : reads).add(t);
       }
       for (const w of writes) reads.delete(w);
-      defines = [...own.filter((n) => n.fn.vis === "pub").map((n) => n.fn.name), ...(typesOfFile.get(path) ?? [])];
+      defines = [...own.filter((n) => n.fn.vis === "pub").map((n) => n.fn.name), ...(typesOfFile.get(path) ?? []), ...(constsOfFile.get(path) ?? [])];
     }
     const mine = written.get(path) ?? { role: "", note: "" };
     const file = hash(source(path));
@@ -254,8 +275,13 @@ export function scan(root: string, cfg: Config, model = buildModel(root, cfg)): 
       return t ? { ref, kind: "table", target: key!, hash: hash(JSON.stringify(t.columns)) } : { ref, kind: "missing", target: ref, hash: null };
     }
     if (ref.includes("/") && !ref.includes("::")) {
-      const p = join(root, ref);
-      return existsSync(p) && statSync(p).isFile() ? { ref, kind: "file", target: ref, hash: hash(source(ref)) } : { ref, kind: "missing", target: ref, hash: null };
+      const rel = ref.replace(/\/+$/, "");
+      const p = join(root, rel);
+      if (!existsSync(p)) return { ref, kind: "missing", target: ref, hash: null };
+      if (statSync(p).isFile()) return { ref, kind: "file", target: rel, hash: hash(source(rel)) };
+      // A directory: its file list and every file's content, so adding, removing or editing a file changes it.
+      const files = filesUnder(root, rel);
+      return { ref, kind: "dir", target: rel, hash: hash(files.map((f) => `${f}\n${hash(source(f))}`).join("\n")) };
     }
     const id = resolveFn(ref);
     return id ? { ref, kind: "fn", target: id, hash: fns.get(id)!.body } : { ref, kind: "missing", target: ref, hash: null };
@@ -263,8 +289,11 @@ export function scan(root: string, cfg: Config, model = buildModel(root, cfg)): 
 
   // Behavior and contract sections that declare refs.
   const sections: Section[] = [];
+  // History never describes current code: change logs, deployment records, expired documents and the index itself
+  // are skipped even when they sit inside a scanned directory.
+  const skip = new Set([cfg.docs.changelogs, cfg.docs.deploylogs, cfg.docs.expired, cfg.index!.dir].map((d) => join(root, d)));
   for (const dir of [cfg.docs.behavior, ...cfg.docs.contracts]) {
-    for (const abs of walk(join(root, dir))) {
+    for (const abs of walk(join(root, dir), skip)) {
       const doc = relative(root, abs);
       const lines = readFileSync(abs, "utf8").split("\n");
       const seen = new Map<string, number>();
@@ -273,10 +302,9 @@ export function scan(root: string, cfg: Config, model = buildModel(root, cfg)): 
       lines.forEach((l, i) => {
         if (/^\s*```/.test(l)) fence = !fence;
         const m = !fence && /^#{1,3}\s+(.+?)\s*$/.exec(l);
-        if (m) heads.push({ i, title: l.startsWith("# ") ? "" : m[1] });
+        if (m) heads.push({ i, title: m[1] });
       });
       heads.forEach((hd, k) => {
-        if (!hd.title) return;
         const body = lines.slice(hd.i + 1, heads[k + 1]?.i ?? lines.length);
         const refLine = body.find((l) => REFS_RE.test(l));
         if (!refLine) return;
@@ -318,6 +346,13 @@ function shortNames(paths: string[]): Map<string, string> {
     if (!out.has(p)) out.set(p, p);
   }
   return out;
+}
+
+// Whether a reference points at a source file: the file itself, a directory holding it, or one of its functions.
+export function refersTo(s: Scan, r: RefState, path: string): boolean {
+  if (r.kind === "file") return r.target === path;
+  if (r.kind === "dir") return path.startsWith(`${r.target}/`);
+  return r.kind === "fn" && s.fns.get(r.target)?.file === path;
 }
 
 // ---------- recording ----------
@@ -468,7 +503,7 @@ export function gateIssues(s: Scan, id: string, impl: string[]): string[] {
     if (e.state === "blank") issues.push(`索引行缺 role：${p}，在 ${e.module}.txt 里写上这个文件的职责`);
     else if (e.state === "stale") issues.push(`索引行待更新：${p}，文件改了而 role/note 没改；仍准确就 \`vibedoc index ack ${p}\``);
   }
-  const related = s.sections.filter((x) => x.refs.some((r) => r.ref === id || (r.kind === "fn" && fnIds.has(r.target)) || (r.kind === "file" && files.has(r.target))));
+  const related = s.sections.filter((x) => x.refs.some((r) => r.ref === id || (r.kind === "fn" && fnIds.has(r.target)) || [...files].some((f) => refersTo(s, r, f))));
   if (!related.some((x) => x.refs.some((r) => r.ref === id))) {
     issues.push(`没有行为文档小节引用 ${id}：在描述这项行为的小节标题下加一行 <!-- refs: ${id} ${impl.slice(0, 2).join(" ")} -->`);
   }
@@ -495,7 +530,7 @@ export function browserJson(s: Scan) {
       const f = s.fns.get(r.target)!;
       return { file: f.file, line: f.line };
     }
-    return { file: r.kind === "file" ? r.target : null, line: null };
+    return { file: r.kind === "file" || r.kind === "dir" ? r.target : null, line: null };
   };
   return {
     counts: counts(s),
@@ -522,6 +557,6 @@ export function fileJson(root: string, s: Scan, path: string) {
     text: readFileSync(join(root, path), "utf8"),
     fns: [...s.fns.values()].filter((f) => f.file === path).sort((a, b) => a.line - b.line)
       .map((f) => ({ id: f.id, key: f.key, line: f.line, endLine: f.endLine, docs: f.docs, state: f.state, confirmed: f.confirmed })),
-    sections: s.sections.filter((x) => x.refs.some((r) => (r.kind === "file" && r.target === path) || (r.kind === "fn" && s.fns.get(r.target)?.file === path))).map((x) => ({ key: x.key, doc: x.doc, line: x.line, state: x.state })),
+    sections: s.sections.filter((x) => x.refs.some((r) => refersTo(s, r, path))).map((x) => ({ key: x.key, doc: x.doc, line: x.line, state: x.state })),
   };
 }

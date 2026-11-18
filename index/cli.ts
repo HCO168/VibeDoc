@@ -8,7 +8,7 @@
 //   vibedoc index show <路径>          one file: its index line, functions and the sections that refer to it
 //   vibedoc index check <id> [--impl a,b]   the completion gate for a feature or rule, without changing anything
 import { findRoot, loadConfig } from "../config.ts";
-import { ack, counts, entryLine, gateIssues, scan, sync, writeIndex, writeLedger, type Scan } from "./fresh.ts";
+import { ack, counts, entryLine, gateIssues, refersTo, scan, sync, writeIndex, writeLedger, type Scan } from "./fresh.ts";
 
 const root = findRoot();
 const cfg = loadConfig(root);
@@ -74,7 +74,7 @@ try {
       const mark = f.state === "stale" ? "注释过期" : f.state === "bare" ? (f.confirmed ? "无注释（已确认）" : "无注释") : "";
       console.log(`  ${String(f.line).padStart(5)}  ${f.key}${mark ? `  [${mark}]` : ""}${f.docs ? `  — ${f.docs.split("\n")[0]}` : ""}`);
     }
-    for (const x of s.sections.filter((x) => x.refs.some((r) => (r.kind === "file" && r.target === path) || (r.kind === "fn" && s.fns.get(r.target)?.file === path)))) {
+    for (const x of s.sections.filter((x) => x.refs.some((r) => refersTo(s, r, path)))) {
       console.log(`  文档：${x.key}${x.state === "stale" ? "  [待更新]" : ""}`);
     }
   } else if (command === "check" && positional[0]) {

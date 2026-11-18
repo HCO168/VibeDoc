@@ -191,6 +191,16 @@ export function replayMigrations(files: { path: string; sql: string; defaultSche
             schema.tables.set(`${t.schema}.${t.name}`, t);
           }
         }
+        // Guarded renames and moves: `IF to_regclass(...) IS NULL THEN ALTER TABLE a RENAME TO b; END IF;`.
+        for (const alt of stmt.matchAll(new RegExp(`ALTER\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?(?:ONLY\\s+)?${QNAME}\\s+(RENAME\\s+TO|SET\\s+SCHEMA)\\s+(${IDENT})`, "gi"))) {
+          const t = find(alt[1]);
+          if (!t) continue;
+          touch(t);
+          schema.tables.delete(`${t.schema}.${t.name}`);
+          if (/^rename/i.test(alt[2])) t.name = unquote(alt[3]);
+          else t.schema = unquote(alt[3]);
+          schema.tables.set(`${t.schema}.${t.name}`, t);
+        }
         continue;
       }
       if ((m = new RegExp(`^create\\s+(?:unlogged\\s+|temp(?:orary)?\\s+)?table\\s+(?:if\\s+not\\s+exists\\s+)?${QNAME}\\s*`, "i").exec(stmt))) {

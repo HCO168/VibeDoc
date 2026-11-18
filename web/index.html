@@ -193,6 +193,38 @@ pre.ts { background: var(--panel); border: 1px solid var(--border); border-radiu
 .panel { min-width: 0; }
 .row .name { word-break: break-all; }
 .mods .grp-h { font-size: 11px; color: var(--muted); padding: 6px 8px 2px; }
+/* Document and code browser (AI index): file lines, freshness badges and the source viewer. */
+.ix-row { cursor: pointer; }
+.ix-row:hover { background: var(--accent-bg); }
+.ix-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.ix-role { margin: 3px 0 0; line-height: 1.5; }
+.ix-role.blank { color: var(--muted); font-style: italic; }
+.ix-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.5; word-break: break-all; }
+.ix-meta b { font-weight: 600; color: var(--text); }
+.ix-group { margin: 14px 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.fresh { display: inline-block; font-size: 11px; border-radius: 4px; padding: 0 6px; }
+.fresh.stale { background: var(--modified-bg); color: var(--modified); }
+.fresh.blank, .fresh.bare { background: var(--new-bg); color: var(--new); }
+.fresh.missing { background: var(--danger); color: var(--panel); }
+.mods .c.warn { color: var(--modified); }
+.ix-file { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 12px; align-items: start; }
+.ix-fns { position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow: auto; }
+.ix-fn { padding: 5px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.ix-fn:hover, .ix-fn.on { background: var(--accent-bg); }
+.ix-fn .d { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+.ix-fn .mono { word-break: break-all; }
+.src { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: auto; padding: 6px 0; }
+.src .ln { display: flex; white-space: pre; padding-right: 12px; }
+.src .no { flex: none; width: 52px; text-align: right; padding-right: 12px; color: var(--muted); user-select: none; }
+.src .ln.doc { color: var(--done); }
+.src .ln.in { background: var(--accent-bg); }
+.src .ln.stale { background: var(--modified-bg); }
+.ix-dl { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 4px 10px; font-size: 12.5px; margin: 8px 0 12px; }
+.ix-dl dt { color: var(--muted); }
+.ix-dl dd { margin: 0; word-break: break-all; }
+.ix-link { color: var(--accent); cursor: pointer; }
+.ix-link:hover { text-decoration: underline; }
+@media (max-width: 860px) { .ix-file { grid-template-columns: 1fr; } .ix-fns { position: static; max-height: 240px; } }
 /* Relationship graph: a left-to-right mind map, page → API → functions → tables. */
 .graph-bar { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .graph-bar label { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; color: var(--muted); }
@@ -255,7 +287,7 @@ pre.ts { background: var(--panel); border: 1px solid var(--border); border-radiu
   <h1>VibeDoc</h1>
   <select id="project" class="project-select" title="切换项目"></select>
   <button id="add-project" class="small" title="增加项目">＋ 项目</button>
-  <div class="tabs"><button data-view="board" class="on">规则看板</button><button data-view="map">代码地图</button><button data-view="graph">关系图</button><button data-view="features">功能文档</button><button data-view="manage">项目管理</button></div>
+  <div class="tabs"><button data-view="board" class="on">规则看板</button><button data-view="map">代码地图</button><button data-view="graph">关系图</button><button data-view="features">功能文档</button><button data-view="browse">文档浏览</button><button data-view="manage">项目管理</button></div>
   <select id="module"><option value="">全部模块</option></select>
   <input id="search" type="search" placeholder="搜索" style="width:200px">
   <span class="spacer"></span>
@@ -306,6 +338,9 @@ const state = {
   // Project documents (docs overview from the server) and the 项目管理 view's selection.
   docs: null,
   manage: { section: saved("manageSection", "overview"), file: null, text: "", changelogs: null, open: new Set() },
+  // Document and code browser: the AI index from /index and the open source file.
+  index: null,
+  browse: { module: saved("browseModule", ""), tab: saved("browseTab", "files"), file: null, data: null, fn: null },
   graph: { group: "", page: "", focus: null, bodies: saved("graphBodies", "inline"), shared: saved("graphShared", "0") === "1", allFns: saved("graphAllFns", "0") === "1" },
 };
 
@@ -365,6 +400,11 @@ async function loadCode() {
 }
 async function loadDocs() {
   state.docs = await getJson("/docs");
+}
+async function loadIndex() {
+  state.index = CONFIG.index ? await getJson("/index") : null;
+  // The open file is fetched again so its badges and source follow the change.
+  if (state.index && state.browse.file) await openSource(state.browse.file, state.browse.fn, false);
 }
 const rulesFor = (target) => state.rules.filter((r) => r.target === target);
 
@@ -598,7 +638,8 @@ function mdBlocks(text, heading3) {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    if (!line.trim()) { i++; continue; }
+    // Blank lines and whole-line HTML comments (managed lines such as `<!-- refs: ... -->`) render as nothing, as in Markdown.
+    if (!line.trim() || /^\s*<!--.*-->\s*$/.test(line)) { i++; continue; }
     if (line.startsWith("```")) {
       const buf = [];
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) buf.push(lines[i]);
@@ -2145,6 +2186,150 @@ function renderGraph() {
   return [h("div", { class: "map" }, side, h("div", { class: "panel" }, chips, bar, info, focus?.up, tree))];
 }
 
+// ---------- document and code browser (AI index) ----------
+// Requirements → the functions that implement them → their comments and source → the behavior sections that
+// describe them, with what is stale (code changed, its description did not) marked at every step.
+const FRESH = { stale: "待更新", blank: "缺职责", bare: "无注释", missing: "失效引用" };
+const freshBadge = (st) => (FRESH[st] ? h("span", { class: `fresh ${st}` }, FRESH[st]) : null);
+const LAYER_ORDER = [["api", "接口"], ["backend", "后端"], ["database", "数据访问"], ["types", "类型"], ["frontend", "前端"]];
+const staleOf = (c) => c.staleFns + c.staleEntries;
+function setBrowse(patch) {
+  Object.assign(state.browse, patch);
+  remember("browseModule", state.browse.module);
+  remember("browseTab", state.browse.tab);
+  render();
+}
+async function openSource(path, fn = null, scroll = true) {
+  try {
+    const data = await getJson(`/index/file?path=${encodeURIComponent(path)}`);
+    Object.assign(state.browse, { file: path, data, fn });
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  if (state.view !== "browse") state.view = "browse";
+  render();
+  if (scroll) {
+    const line = fn ? state.browse.data.fns.find((f) => f.id === fn)?.line : null;
+    requestAnimationFrame(() => (line ? document.getElementById(`L${line}`) : document.getElementById("main"))?.scrollIntoView({ block: line ? "center" : "start" }));
+  }
+}
+async function openSection(doc, line) {
+  let text = "";
+  try { text = (await getJson(`/docs/file?path=${encodeURIComponent(doc)}`)).text; } catch (e) { return toast(e.message); }
+  const lines = text.split("\n");
+  const level = (/^(#+)/.exec(lines[line - 1] || "") || ["", "##"])[1].length;
+  let end = line;
+  while (end < lines.length && !(new RegExp(`^#{1,${level}}\\s`).test(lines[end]))) end++;
+  const sec = state.index.sections.find((x) => x.doc === doc && x.line === line);
+  drawer([
+    h("h2", {}, lines[line - 1].replace(/^#+\s*/, ""), sec ? freshBadge(sec.state) : null),
+    h("div", { class: "note", style: "margin:0 0 10px" }, h("span", { class: "mono" }, `${doc}:${line}`)),
+    sec?.state === "stale" ? h("div", { class: "note", style: "color:var(--modified)" }, `引用的 ${sec.changed.join("、")} 改了而正文没改：更新正文，或正文仍准确时运行 vibedoc index ack "${sec.key}"。`) : null,
+    h("div", { class: "doc" }, mdBlocks(lines.slice(line, end).join("\n"), (t) => h("h4", { class: "doc-h3" }, mdInline(t)))),
+    sec ? h("div", {}, h("label", {}, "引用"), ...sec.refs.map((r) => h("div", { style: "font-size:12.5px;margin:3px 0" },
+      r.file ? h("span", { class: "ix-link mono", onclick: () => { document.querySelector(".overlay")?.remove(); openSource(r.file, r.kind === "fn" ? r.target : null); } }, r.ref) : h("span", { class: "mono" }, r.ref),
+      " ", r.kind === "missing" ? freshBadge("missing") : sec.changed.includes(r.ref) ? freshBadge("stale") : h("span", { class: "empty", style: "padding:0" }, { item: "需求", fn: "函数", file: "文件", table: "表" }[r.kind])))) : null,
+  ]);
+}
+function entryMeta(e) {
+  const parts = [["uses", "依赖"], ["api", "接口"], ["reads", "读"], ["writes", "写"], ["defines", "定义"]].filter(([k]) => e[k].length);
+  return h("div", { class: "ix-meta" }, ...parts.flatMap(([k, label], i) => [i ? " · " : "", h("b", {}, label), " ", e[k].join(", ")]));
+}
+function entryRow(e) {
+  return h("div", { class: "row ix-row", onclick: () => openSource(e.path) },
+    h("div", { class: "ix-head" }, h("span", { class: "mono" }, e.path), freshBadge(e.state)),
+    h("div", { class: `ix-role${e.role ? "" : " blank"}` }, e.role || "还没写职责（role）"),
+    e.note ? h("div", { class: "ix-meta" }, h("b", {}, "注意"), " ", e.note) : null,
+    entryMeta(e));
+}
+function browseFiles(entries) {
+  if (!entries.length) return [h("div", { class: "empty" }, "没有匹配的文件")];
+  return LAYER_ORDER.flatMap(([layer, label]) => {
+    const list = entries.filter((e) => e.layer === layer);
+    return list.length ? [h("div", { class: "ix-group" }, `${label} · ${list.length}`), ...list.map(entryRow)] : [];
+  });
+}
+// Requirements of the module: status, where they are implemented and which sections describe them.
+function browseItems(module) {
+  const ix = state.index;
+  const items = ix.items.filter((it) => (!module || it.module === module) && it.kind !== "table" && matches(it.title, it.id));
+  if (!items.length) return [h("div", { class: "empty" }, "这个模块还没有功能或规则条目")];
+  const label = (it) => (it.kind === "feature" ? FSTATUS[it.status] : STATUS[it.status]) || it.status;
+  return items.map((it) => {
+    const secs = ix.sections.filter((x) => x.refs.some((r) => r.ref === it.id));
+    return h("div", { class: "row" },
+      h("div", { class: "ix-head" }, h("span", { class: `st ${it.status}` }, label(it)), h("b", {}, it.title), h("span", { class: "mono", style: "color:var(--muted);font-size:11px" }, it.id)),
+      h("div", { class: "ix-meta" }, h("b", {}, "实现"), " ", it.impl.length ? joinNodes(it.impl.map((r) => r.missing || !r.file ? h("span", { class: "mono" }, r.ref, r.missing ? " " : "", r.missing ? freshBadge("missing") : null)
+        : h("span", { class: "ix-link mono", onclick: () => openSource(r.file, r.fn) }, r.ref))) : "未记录"),
+      h("div", { class: "ix-meta" }, h("b", {}, "行为文档"), " ", secs.length ? joinNodes(secs.map((x) => h("span", {}, h("span", { class: "ix-link", onclick: () => openSection(x.doc, x.line) }, x.key), " ", freshBadge(x.state)))) : "没有小节引用它"));
+  });
+}
+function browseStale(module) {
+  const ix = state.index;
+  const out = [];
+  const inMod = (m) => !module || m === module;
+  for (const f of ix.staleFns.filter((f) => inMod(f.module))) out.push(h("div", { class: "row ix-row", onclick: () => openSource(f.file, f.id) }, freshBadge("stale"), " 函数注释 ", h("span", { class: "mono" }, f.key), h("div", { class: "ix-meta" }, `${f.file}:${f.line}`)));
+  for (const e of ix.entries.filter((e) => e.state === "stale" && inMod(e.module))) out.push(h("div", { class: "row ix-row", onclick: () => openSource(e.path) }, freshBadge("stale"), " 索引行 ", h("span", { class: "mono" }, e.path)));
+  if (!module) {
+    for (const x of ix.sections) {
+      if (x.state === "stale") out.push(h("div", { class: "row ix-row", onclick: () => openSection(x.doc, x.line) }, freshBadge("stale"), " 文档小节 ", x.key, h("div", { class: "ix-meta" }, `变了：${x.changed.join("、")}`)));
+      for (const r of x.refs.filter((r) => r.kind === "missing")) out.push(h("div", { class: "row ix-row", onclick: () => openSection(x.doc, x.line) }, freshBadge("missing"), " ", x.key, " → ", h("span", { class: "mono" }, r.ref)));
+    }
+  }
+  return out.length ? out : [h("div", { class: "empty" }, "没有过期内容")];
+}
+function sourceView() {
+  const b = state.browse;
+  const d = b.data;
+  const e = d.entry;
+  const staleLines = new Set();
+  for (const f of d.fns) if (f.state === "stale") for (let i = f.line; i <= f.endLine; i++) staleLines.add(i);
+  const cur = d.fns.find((f) => f.id === b.fn);
+  const fns = h("div", { class: "panel ix-fns" }, h("div", { class: "ix-group", style: "margin-top:0" }, `函数 · ${d.fns.length}`),
+    ...d.fns.map((f) => h("div", { class: `ix-fn${f.id === b.fn ? " on" : ""}`, onclick: () => { b.fn = f.id; render(); document.getElementById(`L${f.line}`)?.scrollIntoView({ block: "center" }); } },
+      h("div", {}, h("span", { class: "mono" }, f.key.split("::").slice(1).join("::") || f.key), " ", freshBadge(f.state === "bare" && f.confirmed ? null : f.state)),
+      f.docs ? h("div", { class: "d" }, f.docs.split("\n")[0]) : null)),
+    d.fns.length ? null : h("div", { class: "empty" }, "这个文件没有解析到函数"));
+  const lines = d.text.split("\n");
+  const src = h("div", { class: "src" }, ...lines.map((t, i) => {
+    const n = i + 1;
+    const cls = ["ln", /^\s*\/\/\//.test(t) ? "doc" : "", staleLines.has(n) ? "stale" : "", cur && n >= cur.line && n <= cur.endLine ? "in" : ""].filter(Boolean).join(" ");
+    return h("div", { class: cls, id: `L${n}` }, h("span", { class: "no" }, n), t || " ");
+  }));
+  const head = h("div", { class: "panel", style: "margin-bottom:12px" },
+    h("div", { class: "ix-head" }, h("button", { class: "small", onclick: () => setBrowse({ file: null, data: null, fn: null }) }, "← 返回"), h("b", { class: "mono" }, d.path), freshBadge(e.state)),
+    h("dl", { class: "ix-dl" },
+      h("dt", {}, "职责"), h("dd", { class: e.role ? "" : "ix-role blank" }, e.role || "还没写（AI 在索引文件里补 role）"),
+      e.note ? [h("dt", {}, "注意"), h("dd", {}, e.note)] : null,
+      ...[["uses", "依赖"], ["api", "接口"], ["reads", "读表"], ["writes", "写表"], ["defines", "定义"]].filter(([k]) => e[k].length).flatMap(([k, label]) => [h("dt", {}, label), h("dd", { class: "mono" }, e[k].join(", "))]),
+      d.sections.length ? [h("dt", {}, "行为文档"), h("dd", {}, joinNodes(d.sections.map((x) => h("span", {}, h("span", { class: "ix-link", onclick: () => openSection(x.doc, x.line) }, x.key), " ", freshBadge(x.state)))))] : null),
+    e.state === "stale" ? h("div", { class: "note", style: "color:var(--modified);font-size:12px" }, `文件改了而职责描述没改：更新 ${e.module}.txt 里这一行，或仍准确时运行 vibedoc index ack ${d.path}`) : null);
+  return [head, h("div", { class: "ix-file" }, fns, src)];
+}
+function renderBrowse() {
+  const ix = state.index;
+  if (!ix) return [h("div", { class: "empty", style: "padding:40px;text-align:center" }, CONFIG.index ? "加载中…" : "这个项目没有启用 AI 索引：vibedoc.config.json 里加上 codemap 和 \"index\": {}，再运行 vibedoc index generate。")];
+  const b = state.browse;
+  const mods = ix.modules.filter((m) => m.counts.files);
+  if (b.module && !mods.some((m) => m.id === b.module)) b.module = "";
+  const modBtn = (id, label, c) => h("button", { class: b.module === id ? "on" : "", onclick: () => setBrowse({ module: id, file: null, data: null, fn: null }) }, label,
+    h("span", { class: `c${staleOf(c) ? " warn" : ""}` }, staleOf(c) ? `${staleOf(c)} 过期` : c.files));
+  const side = h("div", { class: "mods" }, modBtn("", "全部模块", ix.counts), ...mods.map((m) => modBtn(m.id, m.title, m.counts)));
+  if (b.file && b.data) return [h("div", { class: "map" }, side, h("div", {}, sourceView()))];
+  const mod = mods.find((m) => m.id === b.module);
+  const c = mod ? mod.counts : ix.counts;
+  const tabs = h("div", { class: "chips" }, ...[["files", `文件 ${c.files}`], ["items", "需求与文档"], ["stale", `过期 ${staleOf(c) + (mod ? 0 : c.staleSections + c.broken)}`]]
+    .map(([k, label]) => h("button", { class: `chip${b.tab === k ? " on" : ""}`, onclick: () => setBrowse({ tab: k }) }, label)));
+  const entries = ix.entries.filter((e) => (!mod || e.module === mod.id) && matches(e.path, e.role, e.note, e.defines.join(" "), e.api.join(" ")));
+  const content = b.tab === "items" ? browseItems(mod?.id) : b.tab === "stale" ? browseStale(mod?.id) : browseFiles(entries);
+  const head = h("div", { style: "margin-bottom:10px" },
+    h("h2", { style: "font-size:16px;margin:0 0 4px" }, mod ? `${mod.title}（${mod.id}）` : `${CONFIG.name} 全部模块`),
+    mod?.role ? h("div", { style: "line-height:1.6;margin-bottom:4px" }, mod.role) : null,
+    h("div", { class: "ix-meta" }, `未写职责 ${c.blank} / ${c.files} 个文件 · 注释过期 ${c.staleFns} · 索引行过期 ${c.staleEntries}`, mod ? "" : ` · 文档小节过期 ${c.staleSections} · 失效引用 ${c.broken}`));
+  return [h("div", { class: "map" }, side, h("div", { class: "panel" }, head, tabs, content))];
+}
+
 // ---------- shell ----------
 function render() {
   document.querySelectorAll(".tabs button[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === state.view));
@@ -2157,7 +2342,7 @@ function render() {
     main.replaceChildren(h("div", { class: "empty", style: "padding:40px;text-align:center;font-size:14px" }, "还没有项目。点顶栏「＋ 项目」选一个文件夹（可以就地初始化并预选标准模块），或在仓库里运行 vibedoc init。"));
     return;
   }
-  main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : state.view === "manage" ? renderManage() : state.view.startsWith("plugin:") ? renderPlugin(state.view.slice(7)) : renderMap()));
+  main.replaceChildren(...(state.view === "board" ? renderBoard() : state.view === "graph" ? renderGraph() : state.view === "features" ? renderFeatures() : state.view === "manage" ? renderManage() : state.view === "browse" ? renderBrowse() : state.view.startsWith("plugin:") ? renderPlugin(state.view.slice(7)) : renderMap()));
   window.scrollTo(0, y);
 }
 // Delegated so plugin tabs added per project work too.
@@ -2252,9 +2437,9 @@ function connect() {
   const es = (events = new EventSource(P("/events")));
   es.onopen = () => { live.textContent = "实时同步"; live.className = "live ok"; };
   es.onerror = () => { if (live.textContent !== "已停止") { live.textContent = "连接断开，重连中…"; live.className = "live"; } };
-  es.addEventListener("rules", async () => { await loadRules(); render(); });
+  es.addEventListener("rules", async () => { await Promise.all([loadRules(), loadIndex()]); render(); });
   es.addEventListener("features", async () => {
-    await loadFeatures();
+    await Promise.all([loadFeatures(), loadIndex()]);
     // Re-rendering would move the editor and drop the caret; a stale save is refused by version instead.
     const ed = state.feat.edit;
     if (ed && state.view === "features") {
@@ -2264,8 +2449,8 @@ function connect() {
     render();
   });
   es.addEventListener("tables", async () => { await loadTables(); render(); });
-  es.addEventListener("docs", async () => { await loadDocs(); state.manage.changelogs = null; if (state.view === "manage" && !manageBusy()) render(); });
-  es.addEventListener("code", async () => { await loadCode(); render(); toast("代码有变化，地图已更新"); });
+  es.addEventListener("docs", async () => { await Promise.all([loadDocs(), loadIndex()]); state.manage.changelogs = null; if ((state.view === "manage" && !manageBusy()) || state.view === "browse") render(); });
+  es.addEventListener("code", async () => { await Promise.all([loadCode(), loadIndex()]); render(); toast("代码有变化，地图已更新"); });
   es.addEventListener("projects", () => loadProjects(false));
   es.addEventListener("plugin", (e) => {
     const { name } = JSON.parse(e.data || "{}");
@@ -2280,7 +2465,9 @@ function applyProject() {
   CONFIG = PROJECTS.find((p) => p.id === PROJECT) || CONFIG;
   document.title = PROJECT ? `VibeDoc · ${CONFIG.name}` : "VibeDoc";
   for (const v of ["map", "graph"]) document.querySelector(`.tabs button[data-view="${v}"]`).style.display = CONFIG.codemap ? "" : "none";
+  document.querySelector('.tabs button[data-view="browse"]').style.display = CONFIG.index ? "" : "none";
   if (!CONFIG.codemap && (state.view === "map" || state.view === "graph")) state.view = "board";
+  if (!CONFIG.index && state.view === "browse") state.view = "board";
   applyPlugins();
   const sel = document.getElementById("project");
   sel.replaceChildren(...PROJECTS.map((p) => h("option", { value: p.id }, p.name)));
@@ -2288,7 +2475,8 @@ function applyProject() {
   sel.style.display = PROJECTS.length > 1 ? "" : "none";
 }
 async function loadAll() {
-  await Promise.all([loadRules(), loadFeatures(), loadTables(), loadCode(), loadDocs()]);
+  state.browse.file = state.browse.data = null;
+  await Promise.all([loadRules(), loadFeatures(), loadTables(), loadCode(), loadDocs(), loadIndex()]);
 }
 async function selectProject(id) {
   if (state.feat.edit?.dirty && !confirm("功能文档还有未保存的修改，切换项目会丢失，继续？")) {

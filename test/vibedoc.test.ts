@@ -495,3 +495,117 @@ test("roadmap milestones validate dependencies, concurrent edits and release che
   assert.match(read(join(B, "doc/roadmap/release.md")), /- 状态：done[\s\S]*- \[x\] 测试包可启动/);
   assert.match(vibedoc(B, "roadmap", "show", "release").out, /首发[\s\S]*完成核心流程/);
 });
+
+test("AI index: generation, freshness ledger and the completion gate", () => {
+  const G = join(tmp, "gamma");
+  mkdirSync(G, { recursive: true });
+  spawnSync("git", ["init", "-q"], { cwd: G });
+  assert.equal(vibedoc(G, "init", "--name", "Gamma").code, 0);
+  const cfg = JSON.parse(read(join(G, "vibedoc.config.json")));
+  Object.assign(cfg, {
+    modules: {}, modulesFile: "doc/modules/modules.yaml",
+    codemap: { outDir: "doc/modules", crates: [{ dir: "backend/api", lib: "api" }], migrationsDir: "backend/migrations", frontendRoots: ["frontend/src"] },
+    index: {},
+  });
+  write(join(G, "vibedoc.config.json"), JSON.stringify(cfg, null, 2));
+  write(join(G, "doc/modules/modules.yaml"), "modules:\n  items:\n    title: 条目\n    backend: [backend/api/src/**]\n    frontend: [frontend/src/**]\n    schemas: [shop]\n");
+  write(join(G, "backend/migrations/shop/0001_items.sql"), "CREATE TABLE shop.items (id BIGINT PRIMARY KEY, title TEXT NOT NULL);\n");
+  write(join(G, "backend/api/src/lib.rs"), 'use axum::{routing::get, Router};\npub mod items;\n/// 组装路由。\npub fn build_app() -> Router {\n    Router::new().route("/items", get(items::list_items))\n}\n');
+  const items = (body: string) => `/// 列出全部条目。\npub async fn list_items() -> Vec<i64> {\n    let _ = sqlx::query("SELECT id, title FROM shop.items");\n    ${body}\n}\n\npub fn helper() -> i64 { 1 }\n`;
+  write(join(G, "backend/api/src/items.rs"), items("vec![]"));
+  write(join(G, "frontend/src/api.ts"), "export async function listItems() {\n  return (await fetch(`/items`)).json();\n}\n");
+
+  // Generation: one line per file, an overview, and the ledger.
+  assert.match(vibedoc(G, "index", "generate").out, /3 个文件/);
+  const indexFile = join(G, "doc/index/items.txt");
+  assert.match(read(indexFile), /^backend\/api\/src\/items\.rs \[api\] role: \? \| api: GET \/items \| reads: shop\.items \| defines: list_items, helper$/m);
+  assert.match(read(indexFile), /^frontend\/src\/api\.ts \[frontend\] role: \? \| api: GET \/items \| defines: listItems$/m);
+  assert.match(read(join(G, "doc/index/INDEX.txt")), /module items \[条目\] files: 3 \| blank: 3/);
+  assert.match(read(join(G, "doc/index/ledger.json")), /"api::items::list_items": "[0-9a-f]{10}:[0-9a-f]{10}"/);
+
+  // The gate lists everything still missing before a feature may be done.
+  write(join(G, "doc/features/items.md"), "# 条目（items）\n\n条目的增删查。\n\n## 列表\n\n### 条目列表\n列出全部条目。\n");
+  vibedoc(G, "features", "refresh");
+  let r = vibedoc(G, "features", "set", "done", "items-f1", "--impl", "items::list_items,items::helper");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /函数缺注释：items::helper/);
+  assert.match(r.out, /索引行缺 role：backend\/api\/src\/items\.rs/);
+  assert.match(r.out, /没有行为文档小节引用 items-f1/);
+  assert.match(vibedoc(G, "features", "list", "--all").out, /items-f1\s+新提出/);
+
+  // Do the documentation work, then the gate passes and the overview is refreshed.
+  write(indexFile, read(indexFile).replace("items.rs [api] role: ?", "items.rs [api] role: 条目列表接口").replace(" | defines: list_items, helper", " | defines: list_items, helper | note: 只读"));
+  write(join(G, "doc/behavior/items.md"), "# 条目行为\n\n## 列表\n<!-- refs: items-f1 items::list_items table:shop.items -->\n返回全部条目。\n");
+  assert.match(vibedoc(G, "index", "ack", "items::helper").out, /已确认：函数 items::helper/);
+  assert.equal(vibedoc(G, "index", "check", "items-f1", "--impl", "items::list_items,items::helper").code, 0);
+  r = vibedoc(G, "features", "set", "done", "items-f1", "--impl", "items::list_items,items::helper");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /已持久化/);
+  assert.match(read(join(G, "doc/features/items.md")), /impl=items%3A%3Alist_items%2Citems%3A%3Ahelper/);
+  assert.match(read(indexFile), /role: 条目列表接口 \| api: GET \/items[^\n]*\| note: 只读$/m);
+  assert.match(vibedoc(G, "index", "stale").out, /没有过期内容/);
+
+  // A code change without its comment, index line or behavior section marks all three stale.
+  write(join(G, "backend/api/src/items.rs"), items("vec![1]"));
+  let out = vibedoc(G, "index", "stale").out;
+  assert.match(out, /函数注释\s+items::list_items/);
+  assert.match(out, /索引行\s+backend\/api\/src\/items\.rs/);
+  assert.match(out, /文档小节\s+doc\/behavior\/items\.md#列表[^\n]*items::list_items/);
+  assert.equal(vibedoc(G, "index", "check", "items-f1").code, 1);
+  assert.match(read(indexFile), /role: 条目列表接口/);
+  vibedoc(G, "index", "generate");
+  assert.match(read(indexFile), /\| state: stale$/m);
+
+  // Updating the text clears it; `ack` confirms text that is still accurate.
+  write(join(G, "backend/api/src/items.rs"), items("vec![1]").replace("/// 列出全部条目。", "/// 列出全部条目，至少一条。"));
+  write(join(G, "doc/behavior/items.md"), read(join(G, "doc/behavior/items.md")).replace("返回全部条目。", "返回全部条目，至少一条。"));
+  assert.match(vibedoc(G, "index", "ack", "backend/api/src/items.rs").out, /已确认：索引/);
+  vibedoc(G, "index", "generate");
+  assert.match(vibedoc(G, "index", "stale").out, /没有过期内容/);
+  assert.doesNotMatch(read(indexFile), /\| state: stale$/m);
+
+  // Broken references are reported; --skip lets an item through and records why.
+  write(join(G, "doc/behavior/items.md"), read(join(G, "doc/behavior/items.md")).replace("table:shop.items", "table:shop.items items::gone"));
+  assert.match(vibedoc(G, "index", "stale").out, /失效引用\s+doc\/behavior\/items\.md#列表[^\n]*items::gone/);
+  write(join(G, "doc/features/items.md"), read(join(G, "doc/features/items.md")) + "\n### 条目导出\n导出 CSV。\n");
+  vibedoc(G, "features", "refresh");
+  assert.equal(vibedoc(G, "features", "set", "done", "items-f2").code, 1);
+  r = vibedoc(G, "features", "set", "done", "items-f2", "--skip", "只改了文案");
+  assert.equal(r.code, 0, r.out);
+  assert.match(read(join(G, "doc/index/ledger.json")), /"item":"items-f2","reason":"只改了文案"/);
+  assert.match(vibedoc(G, "index", "show", "backend/api/src/items.rs").out, /list_items[\s\S]*文档：doc\/behavior\/items\.md#列表/);
+
+  // The rule blocks tell the AI about the index and the completion chain only when it is configured.
+  vibedoc(G, "agents", "sync");
+  assert.match(read(join(G, "AGENTS.md")), /`doc\/index\/` is the AI index[\s\S]*vibedoc index check <id>/);
+  assert.match(read(join(G, "doc/AGENTS.md")), /`doc\/index\/` 是 AI 索引/);
+  assert.doesNotMatch(read(join(A, "AGENTS.md")), /AI index/);
+});
+
+test("server: document and code browser", async () => {
+  let projects: any[] = [];
+  for (let i = 0; i < 50 && !projects.some((p) => p.id === "gamma"); i++) {
+    projects = (await api("GET", "/api/projects")).json.projects;
+    if (!projects.some((p) => p.id === "gamma")) await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.equal(projects.find((p) => p.id === "gamma")?.index, true);
+  assert.equal(projects.find((p) => p.id === "alpha")?.index, false);
+  const ix = (await api("GET", "/api/p/gamma/index")).json;
+  assert.equal(ix.counts.files, 3);
+  const items = ix.entries.find((e: any) => e.path === "backend/api/src/items.rs");
+  assert.equal(items.role, "条目列表接口");
+  assert.ok(!("file" in items));
+  assert.deepEqual(ix.items.find((i: any) => i.id === "items-f1").impl.map((r: any) => [r.ref, r.file, r.fn]), [
+    ["items::list_items", "backend/api/src/items.rs", "api::items::list_items"],
+    ["items::helper", "backend/api/src/items.rs", "api::items::helper"],
+  ]);
+  assert.equal(ix.sections[0].key, "doc/behavior/items.md#列表");
+  const file = (await api("GET", `/api/p/gamma/index/file?path=${encodeURIComponent("backend/api/src/items.rs")}`)).json;
+  assert.match(file.text, /pub async fn list_items/);
+  assert.deepEqual(file.fns.map((f: any) => [f.key, f.state]), [["items::list_items", "fresh"], ["items::helper", "bare"]]);
+  assert.equal(file.sections[0].key, "doc/behavior/items.md#列表");
+  // Only indexed source files are served.
+  assert.equal((await api("GET", `/api/p/gamma/index/file?path=${encodeURIComponent("vibedoc.config.json")}`)).status, 404);
+  assert.equal((await api("GET", `/api/p/gamma/index/file?path=${encodeURIComponent("../../etc/passwd")}`)).status, 404);
+  assert.equal((await api("GET", "/api/p/alpha/index")).json.disabled, true);
+});

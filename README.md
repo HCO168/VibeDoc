@@ -43,10 +43,27 @@
 - **项目管理**：总览按「定义范围 → 规划功能 → 跟踪开发 → 验收与交付」汇总进度并提供入口；路线图（里程碑、目标日期、负责人、依赖和发布检查）；待决问题（直接作答）、待办看板（新增、移动、填写验收证据后完成）、待验收、目标记录、变更日志（按日期、可搜索、点开看全文）、需求原话（新建与编辑）、UI 草图（上传图片或 PDF、缩略图浏览）、交付说明、文档入口；AI 规则区块过期时顶部提醒。
 - **代码地图**（需配置 `codemap`）：前端、API、后端、数据库、结构体五个标签，各按自己的方式分组；接口直接显示请求与响应字段；每行可「提要求」写规则，或在关系图中查看。「数据库」标签里可以「新建表」「改表」，表单旁实时显示 SQL 草稿。
 - **关系图**（需配置 `codemap`）：页面 → 接口（递归展开数据体）→ 处理函数调用链 → 读写的表；也可从任一接口、函数、结构体或表出发。
+- **文档浏览**（需配置 `codemap` 与 `index`）：按模块列出每个源文件的职责（role）、注意事项（note）、依赖、接口、读写的表和定义；点开文件看带行号的源码与函数列表，函数注释、索引行和行为文档小节过期时直接标出。「需求与文档」把每条功能和规则、实现它的函数、描述它的行为文档小节串在一起；「过期」汇总全部待更新的内容。
 
 **新增入口**：能新增的东西都有「＋」按钮——顶栏「＋ 项目」（已有 VibeDoc 的文件夹，或选择预设后就地初始化）；规则看板、功能文档侧栏、新建规则／提新功能表单里的「＋ 新模块」（有 `modulesFile` 时写进 `modules.yaml` 并排在最前，可同时填代码路径；否则写进配置的 `modules`）；项目管理里的新增问题、待办、待验收、目标、变更日志、需求、草图、交付说明；「项目设置」里列出模块与插件，可新增模块、登记插件、增加或移除项目（移除只是不再显示，文件不动）。
 
 文件或代码变化时页面实时刷新。
+
+## AI 索引与过期检测
+
+给 AI 的项目缩略图，加上"改了一处，描述它的地方自动标成过期"。需要同时配置 `codemap` 和 `index`。
+
+- **索引**：`vibedoc index generate` 在 `doc/index/` 写出 `INDEX.txt`（全项目总览，每个模块一行：文件数、过期数、模块职责）和每个模块一份 `<模块>.txt`，每个源文件一行：
+
+  ```
+  backend/api/src/items.rs [api] role: 条目列表接口 | uses: db.rs | api: GET /items | reads: shop.items | defines: list_items | note: 只读
+  ```
+
+  字段名都是常见英文单词，读起来一个词一个 token。`uses`、`api`、`reads`、`writes`、`defines` 每次按代码重新生成，不会和代码不符；只有 `role`（职责）和 `note`（约束与坑）由 AI 写，重新生成时保留。
+- **过期账本** `doc/index/ledger.json`（随代码提交）：每段描述连同它所描述对象的内容哈希一起记录——函数的 `///` 注释对应函数体，索引行的 role/note 对应源文件，行为与契约文档的小节对应它在标题下 `<!-- refs: 条目编号 文件::函数名 源码路径 table:schema.表 -->` 里列出的每个对象。对象变了而描述没变，就是过期；两者一起改了算已更新。引用的对象不存在会报「失效引用」。
+- **完成门禁**（`index.gate`，默认开启）：`vibedoc features set done <id> --impl 文件::函数,...` 和 `vibedoc rules mark <id> --impl ...` 先检查：实现函数的注释是否过期或缺失、所在文件的索引行是否缺 role 或过期、是否有行为文档小节引用这个条目、引用它的小节是否过期。有问题就拒绝并列出清单；通过后改状态并刷新索引与总览。确实不需要更新时加 `--skip "原因"`，原因和当时的问题清单记进账本。
+
+于是 AI 的工作链是：需求条目 → 写代码 → 更新函数注释、索引行和行为文档 → 标记完成（门禁检查）→ 总览自动更新。
 
 ## 安装
 
@@ -117,6 +134,7 @@ vibedoc serve       # 或打开 VibeDoc App
     "publicMigrationDirs": ["legacy-public"],
     "frontendRoots": ["frontend/src"]
   },
+  "index": { "dir": "doc/index", "gate": true },
   "watch": [],
   "plugins": ["tools/vibedoc-plugins/translations/plugin.ts"]
 }
@@ -137,6 +155,7 @@ vibedoc serve       # 或打开 VibeDoc App
 | `codemap.crates` | Rust crate 目录与库名；`mainName: "build-app"` 时 `src/main.rs` 以它调用的 `build_<x>_app` 命名为 `<x>_backend` 服务，否则以目录名命名 |
 | `codemap.migrationsDir` | SQL 迁移目录：子目录名即该目录下文件的默认 schema；直接放在目录里或位于 `publicMigrationDirs` 的文件使用 `public` 并最先重放 |
 | `codemap.frontendRoots` | 前端 TypeScript／React 源码目录 |
+| `index` | 可选（需要 `codemap`），启用 AI 索引与过期检测；`dir` 默认 `doc/index`，`gate: false` 关闭完成门禁 |
 | `watch` | 额外需要触发代码地图刷新的目录 |
 | `plugins` | 项目插件的模块路径（相对仓库根目录），见「插件」 |
 
@@ -226,8 +245,8 @@ node --test test/vibedoc.test.ts
 ## 命令（AI 使用）
 
 ```bash
-vibedoc rules list [--all] | show <id> | confirm <id> | start <id> | mark <id> [--impl a,b] | refresh
-vibedoc features list [--all] [模块] | show <id> | set <状态> <id...> | summary [模块] | refresh
+vibedoc rules list [--all] | show <id> | confirm <id> | start <id> | mark <id> [--impl a,b] [--skip 原因] | refresh
+vibedoc features list [--all] [模块] | show <id> | set <状态> <id...> [--impl a,b] [--skip 原因] | summary [模块] | refresh
 vibedoc tables list [--all] [schema] | show <id> | sql <id> | set <状态> <id...> | refresh
 vibedoc changelog new --role <角色> --slug <英文短名> | list [N]
 vibedoc question list | add "<问题>" [--body "<说明>"] | resolve <编号>
@@ -244,6 +263,7 @@ vibedoc module add --preset <编号> [--features]
 vibedoc skill install [--codex | --project] | skill path
 vibedoc web [on|off] [--origin <网址>]
 vibedoc codemap generate | fn <名称> | route <路径片段>
+vibedoc index generate | stale [模块] [--bare] [--blank] | ack <目标>... | show <路径> | check <id> [--impl a,b]
 ```
 
 - 规则：AI 只能改状态行，工具会拒绝任何改动用户原文的写入。`show` 对「已修改」的规则会从 Git 历史找出 AI 上次处理时的原文。
@@ -254,6 +274,7 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 - 待办：先用 `todo list --numbered` 获取分组键和编号。用 `todo move testing 1 done --evidence "测试环境回归通过"` 完成待验收列表的第一项。已完成的待办也可以移回开发或验收。
 - `agents check` 在规则区块缺失或过期时以非零状态退出，可放进检查脚本。
 - 代码地图：`generate` 把每个模块 × 前端／API／后端／数据库／结构体写成 Markdown，并输出 `codemap.json`；`fn`、`route` 查询调用方、路由和表。
+- AI 索引：`generate` 把当前不过期的内容记进账本并重写索引与总览；`stale` 列出过期的函数注释、索引行、文档小节和失效引用（`--bare` 加上改动过而没有注释的函数，`--blank` 加上还没写 role 的文件）；`ack` 确认代码改了但描述仍准确（目标是 `文件::函数名`、源码路径或 `文档路径#标题`）；`check` 不改状态地预演完成门禁。
 
 ## 文件
 
@@ -276,6 +297,7 @@ vibedoc codemap generate | fn <名称> | route <路径片段>
 | `catalog.ts`、`templates/modules/` | 项目预设、标准模块与功能文档草稿 |
 | `skill.ts`、`skills/vibedoc-plugin/` | 写插件的 AI skill、`skill install`、插件骨架 `plugins new` |
 | `test/vibedoc.test.ts` | 端到端测试 |
+| `index/` | AI 索引、过期账本与完成门禁（`fresh.ts` 扫描与判定、`gate.ts` 门禁、`cli.ts` 命令） |
 | `codemap/` | 代码地图：Rust 词法扫描、迁移重放与 SQL 引用、前端 API 调用识别、serde 字段换算、YAML 子集解析、Markdown／JSON 输出 |
 | `mac/VibeDoc.swift`、`mac/install.sh`、`mac/icon.svg` | 原生 macOS App（WebKit 窗口、菜单、服务启停）及其构建脚本 |
 | `templates/agents/` | AGENTS.md 规则区块模板（根目录规则、文档区规则） |

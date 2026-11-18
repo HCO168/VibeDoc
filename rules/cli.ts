@@ -4,15 +4,17 @@
 //   vibedoc rules show <id>         one rule, with the diff since the AI last acted on it
 //   vibedoc rules confirm <id>      plan proposed in chat, waiting for the user
 //   vibedoc rules start <id>        user approved, implementation in progress
-//   vibedoc rules mark <id> [--impl a,b]  implemented
+//   vibedoc rules mark <id> [--impl a,b] [--skip 原因]  implemented (passes the completion gate first, see index/gate.ts)
 //   vibedoc rules refresh           number new rules and refresh badges
 import { relative } from "node:path";
 import { execFileSync } from "node:child_process";
 import { RuleStore, STATUS_NAMES, LAYER_NAMES, parseRules, kindsFor, type RuleItem } from "./store.ts";
 import { findRoot, loadConfig } from "../config.ts";
+import { afterCompletion, checkCompletion } from "../index/gate.ts";
 
 const root = findRoot();
-const kind = kindsFor(loadConfig(root)).rules;
+const cfg = loadConfig(root);
+const kind = kindsFor(cfg).rules;
 const store = new RuleStore(root, new Map(), kind);
 const [command, ...args] = process.argv.slice(2);
 // New items written by hand get their ids before anything is listed or shown.
@@ -57,13 +59,15 @@ try {
   } else if ((command === "confirm" || command === "start" || command === "mark") && args[0]) {
     const status = command === "confirm" ? "confirm" : command === "start" ? "doing" : "done";
     const impl = flag("--impl")?.split(",").map((s) => s.trim()).filter(Boolean);
+    if (status === "done") checkCompletion(root, cfg, [args[0]], impl, flag("--skip"));
     const r = store.setStatus(args[0], status, { impl });
     console.log(line(r));
+    if (status === "done") afterCompletion(root, cfg);
   } else if (command === "refresh") {
     const changed = store.modules().filter((m) => store.refresh(m));
     console.log(changed.length ? `已刷新：${changed.join("、")}` : "无需刷新");
   } else {
-    console.log("用法：vibedoc rules list [--all] | show <id> | confirm <id> | start <id> | mark <id> [--impl a,b] | refresh");
+    console.log("用法：vibedoc rules list [--all] | show <id> | confirm <id> | start <id> | mark <id> [--impl a,b] [--skip 原因] | refresh");
     process.exitCode = command ? 1 : 0;
   }
 } catch (error) {

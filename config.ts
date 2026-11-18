@@ -56,6 +56,10 @@ export type Config = {
     publicMigrationDirs: string[];
     frontendRoots: string[];
   };
+  // AI index and freshness ledger (needs `codemap`): one condensed line per source file under `dir`, a ledger
+  // of content hashes that marks function comments, behavior sections and index lines stale when the code they
+  // describe changes, and (with `gate`) a completion check before a feature or rule is marked done.
+  index: null | { dir: string; gate: boolean };
   // Extra directories whose changes refresh the code map (crate src, migrations and frontend roots are always watched).
   watch: string[];
   // Project plugins: ES module paths relative to the repository root (see plugins.ts).
@@ -119,6 +123,7 @@ export function loadConfig(root: string): Config {
           frontendRoots: strs(cm.frontendRoots),
         }
       : null,
+    index: raw.index && typeof raw.index === "object" ? { dir: str(raw.index.dir, `${docRoot}/index`), gate: raw.index.gate !== false } : null,
     watch: strs(raw.watch),
     plugins: strs(raw.plugins),
   };

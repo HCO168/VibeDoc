@@ -7,6 +7,7 @@
 //   vibedoc rules|features|tables <命令>                   status commands for rules, feature documents and table requests
 //   vibedoc changelog|question|todo|totest|agents <命令>   document system commands (see docs/cli.ts)
 //   vibedoc codemap <命令>           code map generation and queries (needs `codemap` in the config)
+//   vibedoc index <命令>             AI index, freshness ledger and completion gate (needs `codemap` and `index`)
 //   vibedoc plugins [add <路径>]     the project's plugins and their commands, or register one; vibedoc <插件命令> runs one
 //   vibedoc module add <编号> <名称> [--backend a,b] [--frontend a,b] [--schemas a,b]   add a module
 //   vibedoc module add --standard auth,profile [--features]   add standard modules; vibedoc module catalog lists them
@@ -27,7 +28,7 @@ import { DEFAULT_WEB_ORIGINS, normalizeOrigin, setWebOrigins, webOrigins } from 
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
-const SUBCOMMANDS: Record<string, string> = { serve: "server.ts", rules: "rules/cli.ts", features: "features/cli.ts", tables: "tables/cli.ts", codemap: "codemap/cli.ts" };
+const SUBCOMMANDS: Record<string, string> = { serve: "server.ts", rules: "rules/cli.ts", features: "features/cli.ts", tables: "tables/cli.ts", codemap: "codemap/cli.ts", index: "index/cli.ts" };
 const DOC_COMMANDS = new Set(["changelog", "question", "todo", "totest", "agents", "roadmap"]);
 
 // Files `init` creates when missing: [path, template under templates/scaffold].
@@ -229,6 +230,6 @@ if (command === "init" || command === "preset") {
   process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
   await import(join(here, SUBCOMMANDS[command]));
 } else if (!(await pluginCommand(command))) {
-  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | web [on|off] | rules | features | tables | changelog | question | todo | roadmap | totest | agents | codemap | <插件命令>");
+  console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | web [on|off] | rules | features | tables | changelog | question | todo | roadmap | totest | agents | codemap | index | <插件命令>");
   process.exitCode = command ? 1 : 0;
 }

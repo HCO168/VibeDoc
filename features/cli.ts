@@ -2,7 +2,9 @@
 // by the user; status lives in the managed lines and is changed only here (or by board buttons).
 //   vibedoc features list [--all] [模块]        items needing action (new, modified, confirm, doing)
 //   vibedoc features show <id>                  one item, with the text the AI last recorded if modified
-//   vibedoc features set <状态> <id> [<id>...]  set status and record the current text as handled
+//   vibedoc features set <状态> <id> [<id>...] [--impl a,b] [--skip 原因]
+//                                               set status and record the current text as handled; `done` first
+//                                               passes the completion gate when `index` is configured (index/gate.ts)
 //   vibedoc features summary [模块]              counts per module and status
 //   vibedoc features refresh                    number new items and refresh badges
 // 状态：new confirm doing done(已持久化，合入开发主分支) released(已上线正式站) parked
@@ -10,9 +12,11 @@ import { relative } from "node:path";
 import { execFileSync } from "node:child_process";
 import { RuleStore, FEATURES, FEATURE_STATUSES, parseRules, kindsFor, type RuleItem } from "../rules/store.ts";
 import { findRoot, loadConfig } from "../config.ts";
+import { afterCompletion, checkCompletion } from "../index/gate.ts";
 
 const root = findRoot();
-const kind = kindsFor(loadConfig(root)).features;
+const cfg = loadConfig(root);
+const kind = kindsFor(cfg).features;
 const store = new RuleStore(root, new Map(), kind);
 const [command, ...args] = process.argv.slice(2);
 // New items written by hand get their ids before anything is listed or shown.
@@ -53,10 +57,17 @@ try {
       console.log(prev ? `AI 上次记录时的原文：\n${prev}` : "上次记录时的原文不在 Git 历史中（可能尚未提交），请对照当前原文与已实现代码。");
     }
   } else if (command === "set" && args.length >= 2) {
-    const [status, ...ids] = args;
+    const flag = (name: string) => {
+      const i = args.indexOf(name);
+      return i >= 0 ? args[i + 1] : undefined;
+    };
+    const [status, ...ids] = args.filter((a, i) => !a.startsWith("--") && !["--impl", "--skip"].includes(args[i - 1]));
     if (!(FEATURE_STATUSES as readonly string[]).includes(status)) throw new Error(`未知状态：${status}（可用：${FEATURE_STATUSES.join(" ")}）`);
+    const impl = flag("--impl")?.split(",").map((s) => s.trim()).filter(Boolean);
     for (const m of new Set(ids.map((id) => id.replace(/-f\d+$/, "")))) store.refresh(m);
-    for (const id of ids) console.log(line(store.setStatus(id, status)));
+    if (status === "done") checkCompletion(root, cfg, ids, impl, flag("--skip"));
+    for (const id of ids) console.log(line(store.setStatus(id, status, { impl })));
+    if (status === "done") afterCompletion(root, cfg);
   } else if (command === "summary") {
     const modules = args[0] ? [args[0]] : store.modules();
     const order = ["released", "done", "doing", "confirm", "modified", "new", "parked"];
@@ -69,7 +80,7 @@ try {
     const changed = store.modules().filter((m) => store.refresh(m));
     console.log(changed.length ? `已刷新：${changed.join("、")}` : "无需刷新");
   } else {
-    console.log("用法：vibedoc features list [--all] [模块] | show <id> | set <状态> <id...> | summary [模块] | refresh");
+    console.log("用法：vibedoc features list [--all] [模块] | show <id> | set <状态> <id...> [--impl a,b] [--skip 原因] | summary [模块] | refresh");
     process.exitCode = command ? 1 : 0;
   }
 } catch (error) {

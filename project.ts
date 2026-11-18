@@ -15,6 +15,7 @@ import { loadPlugins, pluginContext, pluginRules, type LoadedPlugin } from "./pl
 import { addModule, addPlugin } from "./configedit.ts";
 import { applyStandardModules } from "./catalog.ts";
 import { scaffoldPlugin } from "./skill.ts";
+import { browserJson, fileJson, scan, type Scan } from "./index/fresh.ts";
 
 export const send = (res: ServerResponse, status: number, data: unknown, type = "application/json; charset=utf-8") => {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -65,6 +66,8 @@ export class Project {
   // Resolves once the plugins are loaded; requests wait for it.
   ready: Promise<void>;
   private codemap: string | null = null;
+  // AI index scan (index/fresh.ts), rebuilt lazily after code, document or status changes.
+  private indexScan: Scan | null = null;
   private clients = new Set<ServerResponse>();
   private watchers: FSWatcher[] = [];
   private pluginWatchers: FSWatcher[] = [];
@@ -112,7 +115,7 @@ export class Project {
     const c = this.cfg;
     return {
       id: this.id, name: c.name, root: this.root, rulesDir: c.rulesDir, featuresDir: c.featuresDir, tablesDir: c.tablesDir,
-      migrationsDir: c.codemap?.migrationsDir ?? null, codemap: !!c.codemap, docs: c.docs,
+      migrationsDir: c.codemap?.migrationsDir ?? null, codemap: !!c.codemap, index: !!(c.codemap && c.index), docs: c.docs,
       agents: syncAgents(this.root, c, false, pluginRules(this.plugins)).filter((r) => r.state !== "unchanged").map((r) => r.file),
       plugins: this.plugins.map(({ plugin }) => ({ name: plugin.name, title: plugin.title ?? plugin.name, view: !!plugin.client })),
       pluginPaths: c.plugins,
@@ -138,6 +141,11 @@ export class Project {
     for (const res of this.clients) res.end();
   }
 
+  private scanIndex(): Scan {
+    if (!this.cfg.codemap || !this.cfg.index) throw Object.assign(new Error("这个项目没有启用 AI 索引"), { status: 404 });
+    return (this.indexScan ??= scan(this.root, this.cfg));
+  }
+
   private codemapJson() {
     return (this.codemap ??= JSON.stringify(
       this.cfg.codemap ? toJson(buildModel(this.root, this.cfg)) : { disabled: true, modules: [...this.titles()].map(([id, title]) => ({ id, title })) },
@@ -146,6 +154,7 @@ export class Project {
 
   private watch() {
     const refreshAll = (s: RuleStore, event: string) => () => {
+      this.indexScan = null;
       for (const m of s.modules()) {
         try {
           s.refresh(m);
@@ -158,9 +167,13 @@ export class Project {
     const onRules = debounce(refreshAll(this.rules, "rules"), 250);
     const onFeatures = debounce(refreshAll(this.features, "features"), 250);
     const onTables = debounce(refreshAll(this.tables, "tables"), 250);
-    const onDocs = debounce(() => this.emit("docs"), 400);
+    const onDocs = debounce(() => {
+      this.indexScan = null;
+      this.emit("docs");
+    }, 400);
     const onCode = debounce(() => {
       this.codemap = null;
+      this.indexScan = null;
       this.cfg = loadConfig(this.root);
       this.docs = new DocSystem(this.root, this.cfg);
       this.rules.titles = this.features.titles = this.titles();
@@ -220,6 +233,8 @@ export class Project {
     if (req.method === "GET") {
       if (path === "/docs/roadmap") return send(res, 200, roadmap.overview());
       if (path === "/codemap") return send(res, 200, this.codemapJson());
+      if (path === "/index") return send(res, 200, this.cfg.codemap && this.cfg.index ? browserJson(this.scanIndex()) : { disabled: true });
+      if (path === "/index/file") return send(res, 200, fileJson(this.root, this.scanIndex(), query.get("path") ?? ""));
       if (path === "/rules") return send(res, 200, { items: rules.all().map(view) });
       if (path === "/features") return send(res, 200, this.featureDoc());
       if (path === "/tables") return send(res, 200, { items: tables.all().map(tableView) });

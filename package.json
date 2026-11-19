@@ -1,6 +1,5 @@
 {
-  "name": "vibedoc",
-  "private": true,
+  "name": "vibe-document",
   "version": "0.1.0",
   "description": "本地规则看板、功能文档、代码地图与关系图",
   "license": "SEE LICENSE IN LICENSE-EXCEPTION.md",
@@ -18,7 +17,18 @@
     "node": ">=23.6"
   },
   "scripts": {
-    "serve": "node vibedoc.ts serve",
-    "test": "node --test test/vibedoc.test.ts"
+    "serve": "bash bin/vibedoc serve",
+    "test": "node --test test/vibedoc.test.ts",
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "LICENSE",
+    "LICENSE-EXCEPTION.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

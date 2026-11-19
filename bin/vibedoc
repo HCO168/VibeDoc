@@ -7,4 +7,6 @@ while [ -L "$SOURCE" ]; do
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 HOME_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
-exec "${VIBEDOC_NODE:-node}" "$HOME_DIR/vibedoc.ts" "$@"
+ENTRY="$HOME_DIR/vibedoc.ts"
+[[ -f "$HOME_DIR/dist/vibedoc.js" ]] && ENTRY="$HOME_DIR/dist/vibedoc.js"
+exec "${VIBEDOC_NODE:-node}" "$ENTRY" "$@"

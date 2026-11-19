@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const HOME = join(dirname(fileURLToPath(import.meta.url)), "..");
+const HOME = process.env.VIBEDOC_TEST_HOME ?? join(dirname(fileURLToPath(import.meta.url)), "..");
+const entryExtension = existsSync(join(HOME, "vibedoc.js")) ? ".js" : ".ts";
 const tmp = mkdtempSync(join(tmpdir(), "vibedoc-test-"));
 const env = { ...process.env, XDG_CONFIG_HOME: join(tmp, "xdg"), VIBEDOC_REPO: "" };
 delete (env as Record<string, string | undefined>).VIBEDOC_REPO;
@@ -17,7 +18,7 @@ const A = join(tmp, "alpha");
 const B = join(tmp, "beta");
 
 function vibedoc(cwd: string, ...args: string[]) {
-  const r = spawnSync(process.execPath, [join(HOME, "vibedoc.ts"), ...args], { cwd, env, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(HOME, `vibedoc${entryExtension}`), ...args], { cwd, env, encoding: "utf8" });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
 const write = (path: string, text: string) => {
@@ -102,7 +103,7 @@ before(async () => {
   assert.equal(vibedoc(B, "init", "--name", "Beta").code, 0);
   const port = 47000 + Math.floor(Math.random() * 1000);
   base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, [join(HOME, "server.ts")], { cwd: tmp, env: { ...env, PORT: String(port) }, stdio: "pipe" });
+  server = spawn(process.execPath, [join(HOME, `server${entryExtension}`)], { cwd: tmp, env: { ...env, PORT: String(port) }, stdio: "pipe" });
   for (let i = 0; i < 100; i++) {
     try {
       const html = await (await fetch(`${base}/`)).text();

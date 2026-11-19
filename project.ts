@@ -1,3 +1,4 @@
+import { moduleMetadata } from "./modulemeta.ts";
 // One repository served by VibeDoc: its config, rule/feature/table stores, the rest of the document system,
 // the code map cache, file watchers, live-event clients, and the per-project API (`/api/p/<id>/...`, prefix removed).
 import { existsSync, readFileSync, watch, type FSWatcher } from "node:fs";
@@ -113,6 +114,8 @@ export class Project {
 
   info() {
     const c = this.cfg;
+    const defs = loadModules(this.root, c).modules;
+    const metadata = new Map(defs.filter(m => m.metadata).map(m => [m.id, moduleMetadata(this.root, m.id, m.metadata!)]));
     return {
       id: this.id, name: c.name, root: this.root, rulesDir: c.rulesDir, featuresDir: c.featuresDir, tablesDir: c.tablesDir,
       migrationsDir: c.codemap?.migrationsDir ?? null, codemap: !!c.codemap, index: !!(c.codemap && c.index), docs: c.docs,
@@ -120,14 +123,14 @@ export class Project {
       plugins: this.plugins.map(({ plugin }) => ({ name: plugin.name, title: plugin.title ?? plugin.name, view: !!plugin.client })),
       pluginPaths: c.plugins,
       modulesFile: c.modulesFile,
-      modules: [...this.titles()].map(([id, title]) => ({ id, title })),
+      modules: [...this.titles(defs)].map(([id, title]) => ({ id, title, metadata: metadata.get(id) })),
       pluginErrors: this.pluginErrors,
     };
   }
 
   // Configured modules plus any module that already has a rule or feature file.
-  titles(): Map<string, string> {
-    const map = new Map(loadModules(this.root, this.cfg).modules.map((m) => [m.id, m.title]));
+  titles(defs = loadModules(this.root, this.cfg).modules): Map<string, string> {
+    const map = new Map(defs.map((m) => [m.id, m.title]));
     for (const s of [this.rules, this.features]) for (const m of s?.modules() ?? []) if (!map.has(m)) map.set(m, m);
     return map;
   }

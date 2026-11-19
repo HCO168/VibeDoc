@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, dirname, basename } from "node:path";
 import { parseYaml } from "./yaml.ts";
+import type { Sources } from "../modulemeta.ts";
 import type { Config } from "../config.ts";
 import { parseRust, type RustFile, type RustFn, type RustType } from "./rust.ts";
 import { replayMigrations, sqlRefs, type Schema, type Table, type SqlFunction } from "./sql.ts";
@@ -10,6 +11,7 @@ export const LAYERS = ["frontend", "api", "backend", "database"] as const;
 export type Layer = (typeof LAYERS)[number];
 
 export type ModuleDef = {
+  metadata?: Sources;
   id: string;
   title: string;
   backend: string[];
@@ -132,6 +134,7 @@ export function loadModules(root: string, cfg: Config): { modules: ModuleDef[]; 
   const modules: ModuleDef[] = Object.entries(raw.modules ?? {}).map(([id, def]: [string, any]) => ({
     id,
     title: String(def?.title ?? id),
+    metadata: def?.metadata ? { manifest: def.metadata.manifest, cargo: def.metadata.cargo } : undefined,
     backend: list(def?.backend),
     frontend: list(def?.frontend),
     schemas: list(def?.schemas),

@@ -1497,7 +1497,25 @@ function renderManage() {
       h("div", { class: "empty" }, "仓库：", h("code", { class: "mono" }, CONFIG.root), "　配置：", h("code", { class: "mono" }, "vibedoc.config.json")),
       h("div", { class: "feat-sec" }, `模块（${(CONFIG.modules || []).length}）`),
       h("div", { class: "empty" }, CONFIG.modulesFile ? ["来自 ", h("code", { class: "mono" }, CONFIG.modulesFile)] : "来自 vibedoc.config.json 的 modules"),
-      h("div", { class: "chips" }, (CONFIG.modules || []).map((x) => h("span", { class: "chip", title: x.id }, `${x.title}（${x.id}）`))),
+      ...(CONFIG.modules || []).map(({ id, title, metadata }) => {
+        const label = title + "（" + id + "）";
+        if (!metadata) return h("div", {}, label + " · 未配置元信息来源");
+        const info = metadata.manifest;
+        const deps = info?.requires;
+        const names = required => deps?.filter(d => d.required === required).map(d => d.id).join("、");
+        const list = items => items === undefined ? "未声明" : items.join("、") || "无";
+        return h("details", { class: "doc" },
+          h("summary", {}, label + " · 源码版本 " + (metadata.sourceVersion || "未知") +
+            " · 必需依赖 " + (deps ? names(true) || "无" : "未知") + " · 可选依赖 " + (deps ? names(false) || "无" : "未知")),
+          metadata.errors.map(msg => h("div", { class: "err" }, msg)),
+          info ? h("div", {},
+            info.buildVersion ? h("div", {}, "构建版本 " + info.buildVersion) : null,
+            h("div", {}, "平台 API　" + (info.platform || "未声明")),
+            h("div", {}, "提供能力　" + list(info.provides && Object.entries(info.provides).map(([k,v]) => k + " " + v))),
+            h("div", {}, "冲突模块　" + list(info.conflicts)),
+            (deps || []).map(d => h("div", {}, [d.required ? "必需" : "可选", d.id, d.capability, d.version, d.scope].filter(Boolean).join(" · ")))) : null,
+          h("div", {}, "来源　" + Object.values(metadata.sources).join("、")));
+      }),
       h("div", { class: "doc-bar" }, newModuleButton()),
       h("div", { class: "feat-sec" }, `插件（${plugins.length}）`),
       plugins.length ? h("ul", { class: "doc" }, plugins.map((x, i) => h("li", {}, h("strong", {}, x.title), " ", h("code", { class: "mono" }, CONFIG.pluginPaths?.[i] || x.name), x.view ? "　有看板页" : ""))) : h("div", { class: "empty" }, "还没有插件。"),

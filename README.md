@@ -185,12 +185,17 @@ shared_files:                 # 不整体归属某模块的共享文件：函数
 modules:
   billing:
     title: 计费
+    metadata:
+      manifest: backend/billing/module.json
+      cargo: backend/billing/Cargo.toml
     backend: [backend/api/src/billing*]
     frontend: [frontend/src/pages/billing/**]
     schemas: [billing]        # 表与 SQL 函数按 schema 归属
     functions: []             # 把共享文件中的个别函数指定给本模块：`文件名::函数名`
     docs: []                  # 叙述性文档，生成的代码地图会链接过去
 ```
+
+可选的 `metadata` 路径相对项目根目录。项目设置读取 `cargo` 的显式 `[package].version` 作为源码版本。JSON 清单的 `module_id` 须匹配模块，可提供 `platform_api`、`provides`（能力到版本的映射）、`conflicts`（含 `module_id`、`capability`、`api_version` 的冲突条目列表）及 `requires`（依赖条目列表）。每项依赖包含 `module_id` 和布尔值 `required`，可补充 `capability`、`api_version`、`scope`。构建清单可用 `module_version` 提供构建版本。刷新看板即可读取来源文件的更新。
 
 `examples/` 里有一份真实项目的配置可参考。
 

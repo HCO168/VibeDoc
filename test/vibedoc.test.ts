@@ -40,7 +40,7 @@ function makeAlpha() {
     codemap: { outDir: "doc/modules", crates: [{ dir: "backend/api", lib: "api" }], migrationsDir: "backend/migrations", frontendRoots: ["frontend/src"] },
   });
   write(join(A, "vibedoc.config.json"), JSON.stringify(cfg, null, 2));
-  write(join(A, "doc/modules/modules.yaml"), "modules:\n  items:\n    title: 条目\n    backend: [backend/api/src/**]\n    frontend: [frontend/src/**]\n    schemas: [shop]\n");
+  write(join(A, "doc/modules/modules.yaml"), "modules:\n  items:\n    title: 条目\n    metadata:\n      manifest: item-manifest.json\n      cargo: backend/api/Cargo.toml\n    backend: [backend/api/src/**]\n    frontend: [frontend/src/**]\n    schemas: [shop]\n");
   write(join(A, "backend/api/Cargo.toml"), '[package]\nname = "api"\n');
   write(join(A, "backend/api/src/lib.rs"), [
     "use axum::{routing::get, Router, Json};",
@@ -205,6 +205,31 @@ test("server: projects, health and token checks", async () => {
   assert.deepEqual(beta.agents, []);
   assert.equal((await api("POST", "/api/p/beta/rules", { module: "app", layer: "api", title: "x", body: "" }, false)).status, 403);
   assert.equal((await api("GET", "/api/p/nope/rules")).status, 404);
+});
+
+test("模块元信息随来源更新，区分缺失、空依赖和构建版本", async () => {
+  const getModule = async () => {
+    const { json } = await api("GET", "/api/projects");
+    return json.projects.find((p: any) => p.id === "alpha").modules.find((m: any) => m.id === "items").metadata;
+  };
+  assert.equal((await getModule()).errors.length, 2);
+  const cargo = join(A, "backend/api/Cargo.toml");
+  write(cargo, '[package]\nversion = "1.2.3"\n[dependencies]\n');
+  const path = join(A, "item-manifest.json");
+  write(path, JSON.stringify({ module_id: "items", requires: [], conflicts: [] }));
+  const first = await getModule();
+  assert.equal(first.sourceVersion, "1.2.3");
+  assert.deepEqual(first.manifest.requires, []);
+  assert.equal(first.manifest.buildVersion, undefined);
+  write(path, JSON.stringify({ module_id: "items", module_version: "2.0.0", conflicts: [
+    { module_id: "legacy", capability: "legacy.api", api_version: "^1" }
+  ] }));
+  const next = await getModule();
+  assert.equal(next.manifest.buildVersion, "2.0.0");
+  assert.equal(next.manifest.requires, undefined);
+  assert.deepEqual(next.manifest.conflicts, ["legacy legacy.api ^1"]);
+  write(path, JSON.stringify({ module_id: "other" }));
+  assert.equal((await getModule()).errors.length, 1);
 });
 
 // A raw request, so Origin and Host can be set like a browser on another site would.

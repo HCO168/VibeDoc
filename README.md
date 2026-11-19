@@ -73,10 +73,10 @@
 从 npm 安装（需要 Node.js 23.6 或更新版本），命令名是 `vibedoc`：
 
 ```bash
-npm install -g vibe-doc
+npm install -g vibe-document
 ```
 
-npm 包名是 `vibe-doc`；npm 上另一个名为 `vibedoc` 的包与本项目无关，所以不要用 `npx vibedoc`，临时运行请写 `npx vibe-doc`。
+npm 包名是 `vibe-document`；npm 上另一个名为 `vibedoc` 的包与本项目无关，所以不要用 `npx vibedoc`，临时运行请写 `npx vibe-document`。
 
 或者从源码安装（改了源码立即生效）：
 

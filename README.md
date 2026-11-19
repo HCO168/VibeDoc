@@ -50,10 +50,10 @@
 ## 安装
 
 ```bash
-npm install -g vibe-doc
+npm install -g vibe-document
 ```
 
-或直接运行：`npx vibe-doc`。npm 安装包包含编译后的 JavaScript，无第三方运行依赖。
+或直接运行：`npx vibe-document`。npm 安装包包含编译后的 JavaScript，无第三方运行依赖。
 
 从源码使用：
 

@@ -6,7 +6,7 @@
 // the per-start token embedded in the served page. Per-project API lives under /api/p/<project id>/.
 import { createServer, type IncomingMessage } from "node:http";
 import { existsSync, readFileSync, realpathSync, watch } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { CONFIG_FILE, findRoot, loadConfig } from "./config.ts";
@@ -108,7 +108,7 @@ const server = createServer(async (req, res) => {
       if (!existsSync(join(dir, CONFIG_FILE))) {
         if (!data.init) return send(res, 409, { error: "这个文件夹还没有 vibedoc.config.json", needsInit: true });
         const modules = Array.isArray(data.modules) ? data.modules.map(String).filter((m: string) => /^[a-z][a-z0-9_]*$/.test(m)) : [];
-        const args = [join(here, "vibedoc.ts"), "init", ...(data.name ? ["--name", String(data.name)] : []), ...(modules.length ? ["--modules", modules.join(",")] : []), ...(data.features ? ["--features"] : [])];
+        const args = [join(here, `vibedoc${extname(fileURLToPath(import.meta.url))}`), "init", ...(data.name ? ["--name", String(data.name)] : []), ...(modules.length ? ["--modules", modules.join(",")] : []), ...(data.features ? ["--features"] : [])];
         const r = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8" });
         if (r.status !== 0) return send(res, 400, { error: `初始化失败：${(r.stderr || r.stdout).trim()}` });
       }

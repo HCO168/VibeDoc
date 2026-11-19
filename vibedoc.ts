@@ -13,7 +13,7 @@
 //   vibedoc plugins new <名称> [--title 标签] [--view]          scaffold a plugin under tools/vibedoc-plugins and register it
 //   vibedoc skill install [--claude|--codex|--project] | path  install the AI skill for building plugins
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_FILE, findRoot, loadConfig, type Config } from "./config.ts";
 import { renderTemplate, syncAgents, templateVars } from "./agents.ts";
@@ -24,6 +24,7 @@ import { applyStandardModules, loadCatalog } from "./catalog.ts";
 import { installSkill, scaffoldPlugin, skillDir } from "./skill.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const entryFile = (name: string) => join(here, name.replace(/\.ts$/, extname(fileURLToPath(import.meta.url))));
 const [command, ...rest] = process.argv.slice(2);
 const SUBCOMMANDS: Record<string, string> = { serve: "server.ts", rules: "rules/cli.ts", features: "features/cli.ts", tables: "tables/cli.ts", codemap: "codemap/cli.ts" };
 const DOC_COMMANDS = new Set(["changelog", "question", "todo", "totest", "agents"]);
@@ -184,11 +185,11 @@ if (command === "init") {
   if (!roots.length) console.log("还没有项目：在仓库里运行 vibedoc init 或 vibedoc add");
   for (const r of roots) console.log(`${ids.get(r)!.padEnd(20)} ${existsSync(join(r, CONFIG_FILE)) ? loadConfig(r).name.padEnd(16) : "（配置缺失）".padEnd(16)} ${r}`);
 } else if (command && DOC_COMMANDS.has(command)) {
-  process.argv = [process.argv[0], join(here, "docs/cli.ts"), command, ...rest];
-  await import(join(here, "docs/cli.ts"));
+  process.argv = [process.argv[0], entryFile("docs/cli.ts"), command, ...rest];
+  await import(entryFile("docs/cli.ts"));
 } else if (command && SUBCOMMANDS[command]) {
-  process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
-  await import(join(here, SUBCOMMANDS[command]));
+  process.argv = [process.argv[0], entryFile(SUBCOMMANDS[command]), ...rest];
+  await import(entryFile(SUBCOMMANDS[command]));
 } else if (!(await pluginCommand(command))) {
   console.log("用法：vibedoc init | serve [--only] | add | remove | projects | module add|catalog | plugins [add|new] | skill install|path | rules | features | tables | changelog | question | todo | totest | agents | codemap | <插件命令>");
   process.exitCode = command ? 1 : 0;

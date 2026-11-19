@@ -7,4 +7,7 @@ while [ -L "$SOURCE" ]; do
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 HOME_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
-exec "${VIBEDOC_NODE:-node}" "$HOME_DIR/vibedoc.ts" "$@"
+# Git checkouts run the TypeScript sources; the npm package ships only dist/ (Node will not strip types under node_modules).
+ENTRY="$HOME_DIR/vibedoc.ts"
+[ -f "$ENTRY" ] || ENTRY="$HOME_DIR/dist/vibedoc.js"
+exec "${VIBEDOC_NODE:-node}" "$ENTRY" "$@"

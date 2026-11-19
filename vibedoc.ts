@@ -15,7 +15,7 @@
 //   vibedoc skill install [--claude|--codex|--project] | path  install the AI skill for building plugins
 //   vibedoc web [on|off] [--origin <网址>]   let the hosted board (https://vibedoc.hconet.com) use this machine's server
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_FILE, findRoot, loadConfig, type Config } from "./config.ts";
 import { renderTemplate, syncAgents, templateVars } from "./agents.ts";
@@ -27,8 +27,10 @@ import { installSkill, scaffoldPlugin, skillDir } from "./skill.ts";
 import { DEFAULT_WEB_ORIGINS, normalizeOrigin, setWebOrigins, webOrigins } from "./web.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
+// 源码运行时是 .ts，npm 包里运行的是 build.ts 编译出的 .js
+const EXT = extname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
-const SUBCOMMANDS: Record<string, string> = { serve: "server.ts", rules: "rules/cli.ts", features: "features/cli.ts", tables: "tables/cli.ts", codemap: "codemap/cli.ts", index: "index/cli.ts" };
+const SUBCOMMANDS: Record<string, string> = { serve: "server", rules: "rules/cli", features: "features/cli", tables: "tables/cli", codemap: "codemap/cli", index: "index/cli" };
 const DOC_COMMANDS = new Set(["changelog", "question", "todo", "totest", "agents", "roadmap"]);
 
 // Files `init` creates when missing: [path, template under templates/scaffold].
@@ -224,11 +226,11 @@ if (command === "init" || command === "preset") {
   if (!roots.length) console.log("还没有项目：在仓库里运行 vibedoc init 或 vibedoc add");
   for (const r of roots) console.log(`${ids.get(r)!.padEnd(20)} ${existsSync(join(r, CONFIG_FILE)) ? loadConfig(r).name.padEnd(16) : "（配置缺失）".padEnd(16)} ${r}`);
 } else if (command && DOC_COMMANDS.has(command)) {
-  process.argv = [process.argv[0], join(here, "docs/cli.ts"), command, ...rest];
-  await import(join(here, "docs/cli.ts"));
+  process.argv = [process.argv[0], join(here, `docs/cli${EXT}`), command, ...rest];
+  await import(join(here, `docs/cli${EXT}`));
 } else if (command && SUBCOMMANDS[command]) {
-  process.argv = [process.argv[0], join(here, SUBCOMMANDS[command]), ...rest];
-  await import(join(here, SUBCOMMANDS[command]));
+  process.argv = [process.argv[0], join(here, SUBCOMMANDS[command] + EXT), ...rest];
+  await import(join(here, SUBCOMMANDS[command] + EXT));
 } else if (!(await pluginCommand(command))) {
   console.log("用法：vibedoc init | serve [--only] | add | remove | projects | preset list|show | module add|catalog | plugins [add|new] | skill install|path | web [on|off] | rules | features | tables | changelog | question | todo | roadmap | totest | agents | codemap | index | <插件命令>");
   process.exitCode = command ? 1 : 0;

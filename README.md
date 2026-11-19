@@ -70,10 +70,22 @@
 
 ## 安装
 
+从 npm 安装（需要 Node.js 23.6 或更新版本），命令名是 `vibedoc`：
+
+```bash
+npm install -g vibe-doc
+```
+
+npm 包名是 `vibe-doc`；npm 上另一个名为 `vibedoc` 的包与本项目无关，所以不要用 `npx vibedoc`，临时运行请写 `npx vibe-doc`。
+
+或者从源码安装（改了源码立即生效）：
+
 ```bash
 git clone https://github.com/HCO168/VibeDoc.git ~/Documents/GitHub/VibeDoc
 ln -s ~/Documents/GitHub/VibeDoc/bin/vibedoc ~/.local/bin/vibedoc   # 任意在 PATH 中的目录
 ```
+
+源码检出直接运行 TypeScript；npm 包里是 `npm pack`/`npm publish` 时由 `build.ts` 编译出的 `dist/`（Node 不在 `node_modules` 里剥离类型）。
 
 ## 在一个仓库里使用
 
@@ -283,7 +295,8 @@ vibedoc index generate | stale [模块] [--bare] [--blank] | ack <目标>... | s
 
 | 文件 | 作用 |
 | --- | --- |
-| `vibedoc.ts`、`bin/vibedoc` | 命令入口 |
+| `vibedoc.ts`、`bin/vibedoc` | 命令入口（源码检出运行 `vibedoc.ts`，npm 包运行 `dist/vibedoc.js`） |
+| `build.ts` | 发布前把源码编译成 JavaScript 写入 `dist/`（`prepack` 自动运行） |
 | `config.ts` | 查找仓库根目录、读取 `vibedoc.config.json`（含文档布局、发布链、语言） |
 | `registry.ts` | 本机项目列表 `~/.config/vibedoc/projects.json` |
 | `agents.ts` | 渲染规则模板，写入或检查 `AGENTS.md` 中的规则区块 |

@@ -1,9 +1,8 @@
 {
-  "name": "vibedoc",
-  "private": true,
+  "name": "vibe-doc",
   "version": "0.1.0",
   "description": "本地规则看板、功能文档、代码地图与关系图",
-  "license": "SEE LICENSE IN LICENSE-EXCEPTION.md",
+  "license": "AGPL-3.0-or-later",
   "author": "HCO168",
   "repository": {
     "type": "git",
@@ -14,11 +13,26 @@
   "bin": {
     "vibedoc": "bin/vibedoc"
   },
+  "files": [
+    "bin/",
+    "dist/",
+    "LICENSE-EXCEPTION.md"
+  ],
   "engines": {
     "node": ">=23.6"
   },
   "scripts": {
+    "prepack": "node build.ts",
     "serve": "node vibedoc.ts serve",
     "test": "node --test test/vibedoc.test.ts"
-  }
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "documentation",
+    "codemap",
+    "kanban",
+    "claude-code",
+    "codex"
+  ]
 }

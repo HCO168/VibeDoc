@@ -8,7 +8,7 @@
 // Per-project API lives under /api/p/<project id>/.
 import { createServer, type IncomingMessage } from "node:http";
 import { existsSync, readFileSync, realpathSync, watch } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { CONFIG_FILE, findRoot, loadConfig } from "./config.ts";
@@ -118,7 +118,7 @@ const server = createServer(async (req, res) => {
         if (!data.init) return send(res, 409, { error: "这个文件夹还没有 vibedoc.config.json", needsInit: true });
         if (data.preset !== undefined && (typeof data.preset !== "string" || !/^[a-z][a-z0-9-]*$/.test(data.preset))) return send(res, 400, { error: "项目预设编号无效" });
         if (data.modules !== undefined && (!Array.isArray(data.modules) || data.modules.some((m: unknown) => typeof m !== "string" || !/^[a-z][a-z0-9_]*$/.test(m)))) return send(res, 400, { error: "标准模块编号无效" });
-        const args = [join(here, "vibedoc.ts"), "init", ...(data.name ? ["--name", String(data.name)] : []),
+        const args = [join(here, `vibedoc${extname(fileURLToPath(import.meta.url))}`), "init", ...(data.name ? ["--name", String(data.name)] : []),
           ...(data.preset ? ["--preset", data.preset] : []), ...(data.modules ? ["--modules", data.modules.join(",")] : []), ...(data.features ? ["--features"] : [])];
         const r = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8" });
         if (r.status !== 0) return send(res, 400, { error: `初始化失败：${(r.stderr || r.stdout).trim()}` });
